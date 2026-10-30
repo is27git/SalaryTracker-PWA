@@ -6,27 +6,25 @@
     app.presets = app.presets || {};
     app.presets.gradeRates = app.presets.gradeRates || {};
 
-    const old = Number(app.presets.gradeRates['5']);
-    if (app.presets.gradeRates['5'] === undefined || Math.abs(old - 116) < 0.001) {
-      app.presets.gradeRates['5'] = 133.7;
+    const g5 = Number(app.presets.gradeRates['5']);
+    if (Math.abs(g5 - 116) < 0.001 || Math.abs(g5 - 133.7) < 0.001) {
+      delete app.presets.gradeRates['5'];
+    }
+    if (app.presets.gradeRates['6'] === undefined || Math.abs(Number(app.presets.gradeRates['6']) - 133.7) < 0.001) {
+      app.presets.gradeRates['6'] = 133.7;
     }
 
     Object.values(app.months || {}).forEach(m => {
       const p = m && m.params;
       if (!p) return;
-      if (String(p.grade) === '5' && Math.abs(Number(p.hourlyRate) - 116) < 0.001) {
+      if (String(p.grade) === '5' && Math.abs(Number(p.hourlyRate) - 133.7) < 0.001) {
+        p.grade = '6';
         p.hourlyRate = 133.7;
       }
     });
 
-    document.querySelectorAll('.note').forEach(n => {
-      if (n.innerHTML.includes('5-й разряд = <b>116 ₽/ч</b>')) {
-        n.innerHTML = n.innerHTML.replace('5-й разряд = <b>116 ₽/ч</b>', '5-й разряд = <b>133,7 ₽/ч</b>');
-      }
-    });
-
     const footer = document.querySelector('.footer');
-    if (footer) footer.textContent = footer.textContent.replace('5-й разряд 116 ₽/ч', '5-й разряд 133,7 ₽/ч');
+    if (footer) footer.textContent = 'Версия 3.9 · 4-й разряд 111,68 ₽/ч · 5-й разряд — ставка не подтверждена · 6-й разряд 133,7 ₽/ч · ставка по месяцу · сверка по расчётке · журнал · банк отгулов · PDF.';
 
     if (typeof saveApp === 'function') saveApp();
     if (typeof updatePresetHints === 'function') updatePresetHints();
@@ -35,6 +33,6 @@
     }
     if (typeof render === 'function') render();
   } catch (e) {
-    console.error('5th grade tariff migration', e);
+    console.error('6th grade tariff migration', e);
   }
 })();
