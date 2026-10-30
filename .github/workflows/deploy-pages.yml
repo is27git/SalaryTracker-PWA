@@ -1,0 +1,86 @@
+name: Deploy PWA to GitHub Pages
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Build static PWA
+        run: |
+          set -e
+          mkdir -p _site/icons
+          cat src/index.gz.b64.* | tr -d '\n' | base64 -d > /tmp/index.html.gz
+          gzip -dc /tmp/index.html.gz > _site/index.html
+          cp manifest.webmanifest _site/manifest.webmanifest
+          cp sw.js _site/sw.js
+          touch _site/.nojekyll
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct, zlib
+
+          def write_png(path,w,h,pixel):
+              raw=bytearray()
+              for y in range(h):
+                  raw.append(0)
+                  for x in range(w): raw += bytes(pixel(x,y))
+              def chunk(t,d):
+                  return struct.pack('>I',len(d))+t+d+struct.pack('>I',zlib.crc32(t+d)&0xffffffff)
+              data=b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('>IIBBBBB',w,h,8,6,0,0,0))+chunk(b'IDAT',zlib.compress(bytes(raw),9))+chunk(b'IEND',b'')
+              Path(path).write_bytes(data)
+
+          def icon(size):
+              bg=(7,17,31,255); panel=(14,35,55,255); teal=(94,234,212,255); white=(235,246,255,255)
+              l=int(size*.22); r=int(size*.78); t=int(size*.16); b=int(size*.84); rad=max(2,int(size*.07)); border=max(2,int(size*.025))
+              def rr(x,y,l,t,r,b,rad):
+                  if l+rad<=x<r-rad or t+rad<=y<b-rad: return l<=x<r and t<=y<b
+                  cs=((l+rad,t+rad),(r-rad-1,t+rad),(l+rad,b-rad-1),(r-rad-1,b-rad-1))
+                  return any((x-a)**2+(y-bb)**2<=rad**2 for a,bb in cs)
+              def px(x,y):
+                  if not rr(x,y,l,t,r,b,rad): return bg
+                  if not rr(x,y,l+border,t+border,r-border,b-border,max(1,rad-border)): return teal
+                  if t+int(size*.12)<=y<t+int(size*.25) and l+int(size*.08)<=x<r-int(size*.08): return white
+                  key=max(4,int(size*.07)); gap=max(3,int(size*.035)); sx=l+int(size*.085); sy=t+int(size*.35)
+                  for row in range(3):
+                      for col in range(3):
+                          ll=sx+col*(key+gap); tt=sy+row*(key+gap)
+                          if ll<=x<ll+key and tt<=y<tt+key: return teal if (row,col)!=(2,2) else white
+                  return panel
+              return px
+
+          for sz,name in [(192,'icon-192.png'),(512,'icon-512.png'),(512,'icon-maskable-512.png'),(180,'apple-touch-icon.png')]:
+              write_png(Path('_site/icons')/name,sz,sz,icon(sz))
+          write_png('_site/icons/share-card.png',1200,630,lambda x,y:(7,17,31,255) if not (420<x<780 and 85<y<545) else (94,234,212,255))
+          PY
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Upload site
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: ./_site
+
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
