@@ -138,7 +138,7 @@
   if(oldNote)oldNote.replaceWith(note);else if(ledger)ledger.appendChild(note);
 
   const footer=document.querySelector('.footer');
-  if(footer)footer.textContent='PWA 4.7 · штатная ночь 7,5 ч · выходные: ночные по факту до 8 ч · авто-коррекция по отгулам · архив месяцев · PDF.';
+  if(footer)footer.textContent='PWA 4.8 · штатная ночь 7,5 ч · выходные: ночные по факту до 8 ч · авто-коррекция по отгулам · архив месяцев · PDF.';
 
   if(el('nightAutoToggle')){const p=ensureMonth(currentMonth).params;el('nightAutoToggle').value=p.nightAutoV45===true?'1':'0';}
   syncNightHours(true);render();
@@ -155,7 +155,28 @@
   panel.id = 'shiftCalendar';
   panel.className = 'card';
   panel.style.cssText = 'padding:14px;margin:12px 0';
-  panel.innerHTML = '<h2>График смен</h2><b id="scMonth"></b><div id="scGrid" style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px;margin:10px 0;text-align:center"></div><b id="scDate"></b><div id="scTypes"></div><label><input id="scUse" style="width:auto" type="checkbox"> Брать обычные часы и ночные смены из графика</label><small>Для отгула выбери в календаре дату начала смены. У ночи 7→8 утренние часы относятся к 7-му. Выход за отдельную оплату вноси в журнал.</small>';
+  const style = document.createElement('style');
+  style.textContent = `
+    #shiftCalendar { border-radius:18px; }
+    #scGrid { display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;margin:12px 0;text-align:center; }
+    #scGrid .sc-cell { padding:4px;min-width:0;min-height:54px;display:flex;flex-direction:column;
+      align-items:center;justify-content:flex-start;gap:2px;border:1px solid #b8d8bc;border-radius:10px;
+      background:#d8efd9;color:#234d35;line-height:1.1; }
+    #scGrid .sc-work { background:#193859;color:#f4f8ff;border-color:#355677; }
+    #scGrid [aria-pressed="true"] { outline:2px solid #62daca;outline-offset:0; }
+    #scGrid .sc-number { align-self:flex-start;font-size:11px;font-weight:600; }
+    #scGrid .sc-hours { font-size:clamp(12px,3vw,16px);font-weight:700; }
+    #scGrid .sc-kind { font-size:10px; }
+    #scHelp { display:block;margin:5px 0 10px;color:#bdd1de; }
+  `;
+  document.head.appendChild(style);
+  panel.innerHTML = `<h2>График смен</h2><b id="scMonth"></b><div id="scGrid"></div>
+    <b id="scDate"></b><div id="scTypes"></div>
+    <label><input id="scUse" style="width:auto" type="checkbox"> Считать зарплату по графику</label>
+    <small id="scHelp"></small>
+    <details><summary>Как записать отгул в ночную смену?</summary>
+    Ночь с 7-го на 8-е: нажми 7-е, выбери в журнале «Отгул — использован» и укажи время, например 02:00–07:00.
+    Если вышел в выходной за деньги, добавь в журнал «Выходной — оплата».</details>`;
   document.querySelector('.wrap header').after(panel);
   const grid = el('scGrid');
   let selected = '', snapshot = '';
@@ -201,10 +222,22 @@
       const date=currentMonth+'-'+String(i).padStart(2,'0');
       const btn=document.createElement('button');
       const leave=(month.entries||[]).some(e=>e.type==='compUse'&&e.date===date);
-      btn.style.cssText='padding:5px 0;min-width:0;font-size:12px;'+(date===selected?'outline:2px solid #5eead4':'');
-      btn.style.backgroundColor=types(month,date).length?'#23538a':'#ffdc80';
-      btn.style.color=types(month,date).length?'#ffffff':'#352700';
-      btn.textContent=i+' '+types(month,date).map(k=>kinds[k][0]).join('/')+(leave?' О':'');
+      const shifts = types(month,date);
+      btn.className = 'sc-cell' + (shifts.length ? ' sc-work' : '');
+      btn.setAttribute('aria-pressed',String(date===selected));
+      const lines = [['sc-number', String(i)]];
+      for (const key of shifts) {
+        lines.push(['sc-hours', qty(kinds[key][3])], ['sc-kind', {day:'День',night:'Ночь',short:'5/2'}[key]]);
+      }
+      if (leave) lines.push(['sc-kind','Отгул']);
+      btn.setAttribute('aria-label', [date, ...shifts.map(key => kinds[key][1]+' '+qty(kinds[key][3])+' ч'),
+        shifts.length ? '' : 'Выходной', leave ? 'Отгул' : ''].filter(Boolean).join(', '));
+      for (const [cls,label] of lines) {
+        const line = document.createElement('span');
+        line.className = cls;
+        line.textContent = label;
+        btn.append(line);
+      }
       btn.onclick=()=>{selected=date;if(!editingId)el('entryDate').value=date;draw();};
       grid.append(btn);
     }
@@ -224,6 +257,9 @@
       el('scTypes').append(btn);
     }
     el('scUse').checked=!!month.useShiftCalendar;
+    el('scHelp').textContent = month.useShiftCalendar
+      ? 'Часы для зарплаты берутся из отмеченных смен. Отгулы по времени уменьшают отработанные часы.'
+      : 'Часы для зарплаты задаются вручную. Включи после заполнения графика, чтобы подставить часы и число ночных смен.';
   }
   el('scUse').onchange=()=>{ensureMonth(currentMonth).useShiftCalendar=el('scUse').checked;render();};
   const originalRender=render;
