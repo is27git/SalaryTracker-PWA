@@ -80,9 +80,8 @@
   }
 
   // Compare the same month with and without this journal row.
-  entryImpact = function(entry, params, entries) {
+  function journalImpact(params, entries, remaining) {
     const month = ensureMonth(currentMonth);
-    const remaining = entries.filter(e => e.id !== entry.id);
     function scenario(rows) {
       const p = {...params};
       const plan = month.useShiftCalendar && window.salaryShiftTotals
@@ -104,6 +103,16 @@
       withRow.effective.nightHoursActual = withoutRow.effective.nightHoursActual + delta;
     }
     return round2(calculate(withRow.effective).totalInHand - calculate(withoutRow.effective).totalInHand);
+  }
+  entryImpact = (entry, params, entries) =>
+    journalImpact(params, entries, entries.filter(e => e.id !== entry.id));
+  const renderLedgerBeforeNight = renderLedger;
+  renderLedger = function(params, entries) {
+    renderLedgerBeforeNight(params, entries);
+    const impact = journalImpact(params, entries, []);
+    const output = el('journalNetImpact');
+    output.textContent = (impact >= 0 ? '+' : '') + money(impact);
+    output.className = impact >= 0 ? 'positive' : 'danger';
   };
 
   const prevReadParams=readParams;
@@ -138,7 +147,7 @@
   if(oldNote)oldNote.replaceWith(note);else if(ledger)ledger.appendChild(note);
 
   const footer=document.querySelector('.footer');
-  if(footer)footer.textContent='PWA 4.8 · штатная ночь 7,5 ч · выходные: ночные по факту до 8 ч · авто-коррекция по отгулам · архив месяцев · PDF.';
+  if(footer)footer.textContent='PWA 4.9 · штатная ночь 7,5 ч · выходные: ночные по факту до 8 ч · авто-коррекция по отгулам · архив месяцев · PDF.';
 
   if(el('nightAutoToggle')){const p=ensureMonth(currentMonth).params;el('nightAutoToggle').value=p.nightAutoV45===true?'1':'0';}
   syncNightHours(true);render();
@@ -187,6 +196,9 @@
     for (const date of Object.keys(scheduled(month))) {
       for (const k of types(month,date)) {
         const [, , , credit, segments] = kinds[k];
+        hours += credit;
+        if (k !== "night") continue;
+        nights++;
         const absent = new Set();
         for (const e of month.entries || []) {
           if (e.date !== date || e.type !== 'compUse' || !e.start || !e.end) continue;
@@ -196,12 +208,7 @@
           if (b < a) b += 1440;
           for (const [lo,hi] of segments) for (let t=Math.max(a,lo); t<Math.min(b,hi); t++) absent.add(t);
         }
-        const full = segments.reduce((n,[a,b])=>n+b-a,0);
-        hours += absent.size === full ? 0 : Math.max(0,credit-absent.size/60);
-        if (k === 'night') {
-          nights++;
-          for (const t of absent) if (t >= 1320 && t < 1800) reduction += 1/60;
-        }
+        for (const t of absent) if (t >= 1320 && t < 1800) reduction += 1/60;
       }
     }
     return {hours:round2(hours), nights, reduction:round2(reduction)};
@@ -258,7 +265,7 @@
     }
     el('scUse').checked=!!month.useShiftCalendar;
     el('scHelp').textContent = month.useShiftCalendar
-      ? 'Часы для зарплаты берутся из отмеченных смен. Отгулы по времени уменьшают отработанные часы.'
+      ? 'Часы для зарплаты берутся из отмеченных смен. Отгул списывается из банка. Тарифные часы сохраняются. В ночную смену уменьшается доплата за пропущенные ночные часы.'
       : 'Часы для зарплаты задаются вручную. Включи после заполнения графика, чтобы подставить часы и число ночных смен.';
   }
   el('scUse').onchange=()=>{ensureMonth(currentMonth).useShiftCalendar=el('scUse').checked;render();};
