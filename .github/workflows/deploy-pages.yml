@@ -33,6 +33,7 @@ jobs:
           cp manifest.webmanifest _site/manifest.webmanifest
           cp sw.js _site/sw.js
           cp tariff_patch.js _site/tariff_patch.js
+          cp month_archive.js _site/month_archive.js
           touch _site/.nojekyll
           python3 - <<'PY'
           from pathlib import Path
@@ -40,8 +41,13 @@ jobs:
 
           p=Path('_site/index.html')
           s=p.read_text(encoding='utf-8')
-          if './tariff_patch.js' not in s and '</body>' in s:
-              s=s.replace('</body>', '<script src="./tariff_patch.js"></script>\n</body>', 1)
+          inserts=[]
+          if './tariff_patch.js' not in s:
+              inserts.append('<script src="./tariff_patch.js"></script>')
+          if './month_archive.js' not in s:
+              inserts.append('<script src="./month_archive.js"></script>')
+          if inserts and '</body>' in s:
+              s=s.replace('</body>', '\n'.join(inserts)+'\n</body>', 1)
               p.write_text(s, encoding='utf-8')
 
           def write_png(path,w,h,pixel):
