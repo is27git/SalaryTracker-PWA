@@ -34,6 +34,7 @@ jobs:
           cp sw.js _site/sw.js
           cp tariff_patch.js _site/tariff_patch.js
           cp month_archive.js _site/month_archive.js
+          cp night_patch.js _site/night_patch.js
           touch _site/.nojekyll
           python3 - <<'PY'
           from pathlib import Path
@@ -46,6 +47,8 @@ jobs:
               inserts.append('<script src="./tariff_patch.js"></script>')
           if './month_archive.js' not in s:
               inserts.append('<script src="./month_archive.js"></script>')
+          if './night_patch.js' not in s:
+              inserts.append('<script src="./night_patch.js"></script>')
           if inserts and '</body>' in s:
               s=s.replace('</body>', '\n'.join(inserts)+'\n</body>', 1)
               p.write_text(s, encoding='utf-8')
