@@ -69,7 +69,7 @@
     const m=ensureMonth(currentMonth),p=m.params,auto=modeFor(p);
     p.nightAutoV45=auto;p.nightHoursPerShift=FULL_NIGHT_PAID;if(perShiftInput)perShiftInput.value='7,5';
     const shifts=Math.max(0,num(shiftsInput?shiftsInput.value:p.nightShifts));
-    const base=round2(shifts*FULL_NIGHT_PAID),weekend=weekendNightHours(m.entries||[]),reduction=round2(Math.min(base,nightReduction(m.entries||[]))),actual=round2(Math.max(0,base-reduction)+weekend);
+    const base=round2(shifts*FULL_NIGHT_PAID),weekend=weekendNightHours(m.entries||[]),reduction=round2(Math.min(base,(m.useShiftCalendar && window.salaryShiftTotals ? window.salaryShiftTotals(m).reduction : nightReduction(m.entries || [])))),actual=round2(Math.max(0,base-reduction)+weekend);
     if(auto){p.nightShifts=shifts;p.nightHoursActual=actual;if(actualInput)actualInput.value=String(actual).replace('.',',');}
     if(actualInput)actualInput.readOnly=auto;
     if(el('logNightBase'))el('logNightBase').textContent=qty(base)+' ч';
@@ -111,8 +111,130 @@
   if(oldNote)oldNote.replaceWith(note);else if(ledger)ledger.appendChild(note);
 
   const footer=document.querySelector('.footer');
-  if(footer)footer.textContent='PWA 4.6 · штатная ночь 7,5 ч · выходные: ночные по факту до 8 ч · авто-коррекция по отгулам · архив месяцев · PDF.';
+  if(footer)footer.textContent='PWA 4.7 · штатная ночь 7,5 ч · выходные: ночные по факту до 8 ч · авто-коррекция по отгулам · архив месяцев · PDF.';
 
   if(el('nightAutoToggle')){const p=ensureMonth(currentMonth).params;el('nightAutoToggle').value=p.nightAutoV45===true?'1':'0';}
   syncNightHours(true);render();
+})();
+
+(() => {
+  if (document.getElementById('shiftCalendar')) return;
+  const kinds = {
+    day: ['Д', 'Дневная', '08:00–20:00', 11.2, [[480,690],[740,1200]]],
+    night: ['Н', 'Ночная', '19:00–07:00', 11.5, [[1140,1380],[1410,1860]]],
+    short: ['8', 'Пятидневка', '08:00–16:50', 8, [[480,690],[740,1010]]]
+  };
+  const panel = document.createElement('section');
+  panel.id = 'shiftCalendar';
+  panel.className = 'card';
+  panel.style.cssText = 'padding:14px;margin:12px 0';
+  panel.innerHTML = '<h2>График смен</h2><b id="scMonth"></b><div id="scGrid" style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px;margin:10px 0;text-align:center"></div><b id="scDate"></b><div id="scTypes"></div><label><input id="scUse" style="width:auto" type="checkbox"> Брать обычные часы и ночные смены из графика</label><small>Для отгула выбери в календаре дату начала смены. У ночи 7→8 утренние часы относятся к 7-му. Выход за отдельную оплату вноси в журнал.</small>';
+  document.querySelector('.wrap header').after(panel);
+  const grid = el('scGrid');
+  let selected = '', snapshot = '';
+  function scheduled(month) { return month.shiftCalendar || {}; }
+  function types(month,date) { return (scheduled(month)[date] || []).filter(k => Object.hasOwn(kinds,k)); }
+  function totals(month) {
+    let hours = 0, nights = 0, reduction = 0;
+    for (const date of Object.keys(scheduled(month))) {
+      for (const k of types(month,date)) {
+        const [, , , credit, segments] = kinds[k];
+        const absent = new Set();
+        for (const e of month.entries || []) {
+          if (e.date !== date || e.type !== 'compUse' || !e.start || !e.end) continue;
+          const mins = v => Number(v.slice(0,2))*60 + Number(v.slice(3));
+          let a = mins(e.start), b = mins(e.end);
+          if (k === 'night' && a < 420) a += 1440;
+          if (b < a) b += 1440;
+          for (const [lo,hi] of segments) for (let t=Math.max(a,lo); t<Math.min(b,hi); t++) absent.add(t);
+        }
+        const full = segments.reduce((n,[a,b])=>n+b-a,0);
+        hours += absent.size === full ? 0 : Math.max(0,credit-absent.size/60);
+        if (k === 'night') {
+          nights++;
+          for (const t of absent) if (t >= 1320 && t < 1800) reduction += 1/60;
+        }
+      }
+    }
+    return {hours:round2(hours), nights, reduction:round2(reduction)};
+  }
+  window.salaryShiftTotals = totals;
+  function draw() {
+    const month = ensureMonth(currentMonth);
+    if (!selected.startsWith(currentMonth+'-')) selected = currentMonth+'-01';
+    const stamp = JSON.stringify([currentMonth,selected,scheduled(month),month.useShiftCalendar,(month.entries||[]).filter(e=>e.type==='compUse').map(e=>e.date)]);
+    if (stamp === snapshot) return;
+    snapshot = stamp;
+    const [y,m] = currentMonth.split('-').map(Number);
+    el('scMonth').textContent = monthTitle(currentMonth);
+    grid.replaceChildren();
+    for (const d of ['Пн','Вт','Ср','Чт','Пт','Сб','Вс']) {const x=document.createElement('small');x.textContent=d;grid.append(x);}
+    for(let i=0;i<(new Date(y,m-1,1).getDay()+6)%7;i++)grid.append(document.createElement('span'));
+    for(let i=1;i<=new Date(y,m,0).getDate();i++){
+      const date=currentMonth+'-'+String(i).padStart(2,'0');
+      const btn=document.createElement('button');
+      const leave=(month.entries||[]).some(e=>e.type==='compUse'&&e.date===date);
+      btn.style.cssText='padding:5px 0;min-width:0;font-size:12px;'+(date===selected?'outline:2px solid #5eead4':'');
+      btn.textContent=i+' '+types(month,date).map(k=>kinds[k][0]).join('/')+(leave?' О':'');
+      btn.onclick=()=>{selected=date;if(!editingId)el('entryDate').value=date;draw();};
+      grid.append(btn);
+    }
+    el('scDate').textContent='Смены на '+selected.split('-').reverse().join('.');
+    el('scTypes').replaceChildren();
+    for(const [key,[,name,time,h]] of Object.entries(kinds)){
+      const btn=document.createElement('button'), active=types(month,selected).includes(key);
+      btn.textContent=(active?'✓ ':'')+name+' '+time+' · '+qty(h)+' ч';
+      btn.setAttribute('aria-pressed',String(active));
+      btn.onclick=()=>{
+        month.shiftCalendar ||= {};
+        const next=types(month,selected).filter(k=>k!==key && (key==='night'||k==='night'||active));
+        if(!active)next.push(key);
+        if(next.length)month.shiftCalendar[selected]=next;else delete month.shiftCalendar[selected];
+        render();
+      };
+      el('scTypes').append(btn);
+    }
+    el('scUse').checked=!!month.useShiftCalendar;
+  }
+  el('scUse').onchange=()=>{ensureMonth(currentMonth).useShiftCalendar=el('scUse').checked;render();};
+  const originalRender=render;
+  render=function(){
+    const month=ensureMonth(currentMonth);
+    if(month.useShiftCalendar){
+      const total=totals(month);
+      el('baseHours').value=total.hours;
+      el('nightShifts').value=total.nights;
+    }
+    el('baseHours').readOnly=el('nightShifts').readOnly=!!month.useShiftCalendar;
+    originalRender();draw();
+  };
+  const entryLabel=el('entryDate').closest('label')?.querySelector('.label span');
+  if(entryLabel)entryLabel.textContent='Дата начала смены';
+  const dateMode=document.createElement('select');
+  dateMode.setAttribute('aria-label','Как учитывать дату отгула');
+  dateMode.innerHTML='<option value="shift">Дата начала смены</option><option value="actual">Фактическая дата отгула</option>';
+  el('entryDate').after(dateMode);
+  const validateBeforeCalendar=validateEntry;
+  validateEntry=function(){
+    const input=el('entryDate'), picked=input.value;
+    if(dateMode.value!=='actual' || el('entryType').value!=='compUse')return validateBeforeCalendar();
+    const clock=normalizeClockValue(el('entryStart').value);
+    if(!picked || !clock || clock>='07:00')return validateBeforeCalendar();
+    const day=new Date(picked+'T12:00:00Z');
+    day.setUTCDate(day.getUTCDate()-1);
+    const shift=day.toISOString().slice(0,10);
+    if(!types(app.months[shift.slice(0,7)]||{},shift).includes('night'))return validateBeforeCalendar();
+    if(shift.slice(0,7)!==currentMonth){alert('Эта ночь относится к '+monthTitle(shift.slice(0,7))+'. Открой этот месяц и выбери смену '+shift+'.');return null;}
+    input.value=shift;
+    try{return validateBeforeCalendar();}finally{input.value=picked;}
+  };
+  grid.addEventListener('click',()=>{dateMode.value='shift';});
+  const editBeforeCalendar=editEntry;
+  editEntry=function(id){dateMode.value='shift';editBeforeCalendar(id);};
+  // Capture before the legacy input helper overwrites manually entered hours.
+  el('nightShifts').addEventListener('input',event=>{
+    if(el('nightAutoToggle').value==='0'){event.stopImmediatePropagation();render();}
+  },true);
+  draw();
+  if(ensureMonth(currentMonth).useShiftCalendar)render();
 })();
