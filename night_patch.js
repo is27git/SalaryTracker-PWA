@@ -79,6 +79,33 @@
     return {auto,base,weekend,reduction,actual};
   }
 
+  // Compare the same month with and without this journal row.
+  entryImpact = function(entry, params, entries) {
+    const month = ensureMonth(currentMonth);
+    const remaining = entries.filter(e => e.id !== entry.id);
+    function scenario(rows) {
+      const p = {...params};
+      const plan = month.useShiftCalendar && window.salaryShiftTotals
+        ? window.salaryShiftTotals({...month, entries: rows}) : null;
+      if (plan) p.baseHours = plan.hours;
+      const base = (plan ? plan.nights : num(p.nightShifts)) * FULL_NIGHT_PAID;
+      const loss = plan ? plan.reduction : nightReduction(rows);
+      const nights = Math.max(0, base - loss) + weekendNightHours(rows);
+      return {effective: effectiveParams(p, rows), nights};
+    }
+    const withRow = scenario(entries), withoutRow = scenario(remaining);
+    if (params.nightAutoV45) {
+      withRow.effective.nightHoursActual = withRow.nights;
+      withoutRow.effective.nightHoursActual = withoutRow.nights;
+    } else {
+      // Forecast the marginal night premium even with a manual monthly total.
+      const delta = withRow.nights - withoutRow.nights;
+      withoutRow.effective.nightHoursActual = Math.max(0,num(params.nightHoursActual) - delta);
+      withRow.effective.nightHoursActual = withoutRow.effective.nightHoursActual + delta;
+    }
+    return round2(calculate(withRow.effective).totalInHand - calculate(withoutRow.effective).totalInHand);
+  };
+
   const prevReadParams=readParams;
   readParams=function(){const p=prevReadParams(),old=app.months?.[currentMonth]?.params;p.nightAutoV45=el('nightAutoToggle')?el('nightAutoToggle').value==='1':!!old?.nightAutoV45;p.nightHoursPerShift=FULL_NIGHT_PAID;return p;};
   const prevWriteParams=writeParams;
@@ -175,6 +202,8 @@
       const btn=document.createElement('button');
       const leave=(month.entries||[]).some(e=>e.type==='compUse'&&e.date===date);
       btn.style.cssText='padding:5px 0;min-width:0;font-size:12px;'+(date===selected?'outline:2px solid #5eead4':'');
+      btn.style.backgroundColor=types(month,date).length?'#23538a':'#ffdc80';
+      btn.style.color=types(month,date).length?'#ffffff':'#352700';
       btn.textContent=i+' '+types(month,date).map(k=>kinds[k][0]).join('/')+(leave?' О':'');
       btn.onclick=()=>{selected=date;if(!editingId)el('entryDate').value=date;draw();};
       grid.append(btn);
