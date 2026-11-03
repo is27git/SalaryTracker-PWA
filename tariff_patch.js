@@ -20,24 +20,17 @@
     });
     app.presets.servicePcts['4'] = 40;
 
-    Object.entries(app.months || {}).forEach(([key,m]) => {
+    Object.values(app.months || {}).forEach(m => {
       const p = m && m.params;
       if (!p) return;
       if (String(p.grade || '4') === '4' && near(p.hourlyRate,116)) p.hourlyRate = 111.68;
-      if (String(p.grade) === '5' && near(p.hourlyRate,133.7)) {
-        p.grade = '6';
-        p.hourlyRate = 133.7;
-      }
-      let pct = Number(p.btkPct || 0);
-      if (pct > 0 && pct <= 1) {
-        pct = Math.round(pct * 10000) / 100;
-        p.btkPct = pct;
-      }
-      if (key >= '2026-10' && Math.floor(Number(p.serviceYears || 0)) === 4 && near(p.btkPct,35)) p.btkPct = 40;
+      if (String(p.grade) === '5' && near(p.hourlyRate,133.7)) { p.grade = '6'; p.hourlyRate = 133.7; }
+      const pct = Number(p.btkPct || 0);
+      if (pct > 0 && pct <= 1) p.btkPct = Math.round(pct * 10000) / 100;
     });
 
-    if (typeof renderPrint === 'function' && !window.__salaryPrintPwaV43) {
-      window.__salaryPrintPwaV43 = true;
+    if (typeof renderPrint === 'function' && !window.__salaryPrintPwaV44) {
+      window.__salaryPrintPwaV44 = true;
       const prevRenderPrint = renderPrint;
       renderPrint = function(params, entries, effective, r) {
         prevRenderPrint(params, entries, effective, r);
@@ -59,18 +52,16 @@
     }
 
     const presetNote = Array.from(document.querySelectorAll('.note')).find(n => n.textContent.includes('Пресеты:'));
-    if (presetNote) presetNote.innerHTML = '<b>Пресеты:</b> 4-й разряд = <b>111,68 ₽/ч</b>, 6-й = <b>133,7 ₽/ч</b>, 5-й пока не подтверждён. Для стажа 4 года — <b>40%</b>. Старые 0,35/0,40 автоматически переводятся в 35%/40%.';
+    if (presetNote) presetNote.innerHTML = '<b>Пресеты:</b> 4-й разряд = <b>111,68 ₽/ч</b>, 6-й = <b>133,7 ₽/ч</b>, 5-й пока не подтверждён. Для 4 лет предлагается <b>40%</b>, но конкретный месяц можно оставить 35% или изменить вручную по расчётке.';
 
     const footer = document.querySelector('.footer');
-    if (footer) footer.textContent = 'PWA 4.3 · 4-й 111,68 ₽/ч · 5-й — не подтверждён · 6-й 133,7 ₽/ч · БТК 35/40% · сверка по расчётке · журнал · PDF.';
+    if (footer) footer.textContent = 'PWA 4.4 · помесячный JSON-архив · 4-й 111,68 ₽/ч · 5-й — не подтверждён · 6-й 133,7 ₽/ч · БТК вручную по месяцу · журнал · PDF.';
 
     if (typeof saveApp === 'function') saveApp();
     if (typeof updatePresetHints === 'function') updatePresetHints();
-    if (typeof writeParams === 'function' && typeof ensureMonth === 'function' && typeof currentMonth !== 'undefined') {
-      writeParams(ensureMonth(currentMonth).params);
-    }
+    if (typeof writeParams === 'function' && typeof ensureMonth === 'function' && typeof currentMonth !== 'undefined') writeParams(ensureMonth(currentMonth).params);
     if (typeof render === 'function') render();
   } catch (e) {
-    console.error('PWA v4.3 migration', e);
+    console.error('PWA v4.4 migration', e);
   }
 })();
