@@ -147,7 +147,7 @@
   if(oldNote)oldNote.replaceWith(note);else if(ledger)ledger.appendChild(note);
 
   const footer=document.querySelector('.footer');
-  if(footer)footer.textContent='PWA 4.9 · штатная ночь 7,5 ч · выходные: ночные по факту до 8 ч · авто-коррекция по отгулам · архив месяцев · PDF.';
+  if(footer)footer.textContent='PWA 4.10 · штатная ночь 7,5 ч · выходные: ночные по факту до 8 ч · авто-коррекция по отгулам · архив месяцев · PDF.';
 
   if(el('nightAutoToggle')){const p=ensureMonth(currentMonth).params;el('nightAutoToggle').value=p.nightAutoV45===true?'1':'0';}
   syncNightHours(true);render();
@@ -214,10 +214,89 @@
     return {hours:round2(hours), nights, reduction:round2(reduction)};
   }
   window.salaryShiftTotals = totals;
+  const extraBank = 'overtimeComp';
+  typeLabels[extraBank] = 'Сверхурочные — за отгул';
+  el('entryType').add(new Option(typeLabels[extraBank], extraBank));
+  const previousContribution = entryContribution;
+  entryContribution = function(entry) {
+    const result = previousContribution(entry);
+    if (entry.type === extraBank) result.compEarn = durationHours(entry.start, entry.end);
+    return result;
+  };
+  const beforeMode = updateEntryMode;
+  updateEntryMode = function(force) {
+    beforeMode(force);
+    const exact = el('entryType').value === extraBank;
+    el('entryPaidHours').readOnly = exact;
+    if (exact) {
+      el('entryHoursLabel').textContent = 'В банк отгулов, ч';
+      el('entryHoursHint').textContent = 'по фактическому времени';
+      el('entryPaidHours').value = qty(durationHours(el('entryStart').value, el('entryEnd').value));
+    }
+  };
+  const beforeValidate = validateEntry;
+  validateEntry = function() {
+    if (el('entryType').value === extraBank) {
+      const clocks = [el('entryStart').value, el('entryEnd').value].map(normalizeClockValue);
+      if (!clocks.every(v => /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(v)) || !durationHours(...clocks)) {
+        alert('Укажи начало и окончание сверхурочных.'); return null;
+      }
+      el('entryPaidHours').value = durationHours(...clocks);
+    }
+    return beforeValidate();
+  };
+
+  const quick = document.createElement('dialog');
+  quick.setAttribute('aria-labelledby','scQuickTitle');
+  quick.style.cssText='width:min(360px,92vw);box-sizing:border-box;padding:20px;background:#10253a;color:#edf6ff;border:1px solid #416381;border-radius:16px';
+  quick.innerHTML = `<form style="display:grid;gap:12px">
+    <h3 id="scQuickTitle"></h3><label>Вид записи<select id="scQuickType"></select></label>
+    <div style="display:flex;gap:12px"><label>С какого времени<input type="time" id="scFrom" required></label>
+    <label>До какого времени<input type="time" id="scTo" required></label></div>
+    <output id="scCredit" aria-live="polite"></output><button class="primary" type="submit">Записать в журнал</button>
+    <button type="button" id="scConfigure">Расставить смены</button><button type="button" id="scCancel">Отмена</button>
+    </form>`;
+  panel.append(quick);
+  const categories = {weekend:'Выходной — за оплату',compEarn:'Выходной — за отгул',
+    overtime:'Сверхурочные — за оплату',overtimeComp:typeLabels[extraBank]};
+  function quickHours() {
+    const actual = durationHours(el('scFrom').value, el('scTo').value);
+    const bank = el('scQuickType').value === 'compEarn';
+    return {actual, credit:bank ? num(el('compEarnPerShift').value)||11.2 : actual};
+  }
+  function previewWork() {
+    const {actual,credit} = quickHours();
+    const bank = ['compEarn', extraBank].includes(el('scQuickType').value);
+    el('scCredit').textContent = actual ? 'Факт: '+qty(actual)+' ч · '+(bank?'В банк: ':'К оплате: ')+qty(credit)+' ч' : 'Укажи время начала и окончания.';
+  }
+  function openWork(date) {
+    const assigned = types(ensureMonth(currentMonth),date);
+    el('scQuickTitle').textContent = 'Запись на '+date.split('-').reverse().join('.');
+    const options = el('scQuickType');
+    options.replaceChildren();
+    for (const key of assigned.length ? ['overtime',extraBank] : ['weekend','compEarn','overtime',extraBank]) options.add(new Option(categories[key],key));
+    el('scFrom').value = assigned.length ? kinds[assigned[assigned.length-1]][2].split('–')[1] : '';
+    el('scTo').value = '';
+    previewWork();quick.showModal();
+  }
+  quick.oninput = previewWork;
+  el('scCancel').onclick = ()=>quick.close();
+  el('scConfigure').onclick = ()=>{quick.close();el('scTypes').querySelector('button')?.focus();};
+  quick.querySelector('form').onsubmit = event=>{
+    event.preventDefault();
+    const {actual,credit}=quickHours();
+    if (!actual) {el('scCredit').textContent='Начало и окончание должны различаться.';return;}
+    const entries=ensureMonth(currentMonth).entries;
+    entries.push({id:Date.now().toString(36)+Math.random().toString(36).slice(2,7),
+      date:selected,type:el('scQuickType').value,start:el('scFrom').value,end:el('scTo').value,
+      actualHours:actual,paidHours:credit,comment:'',createdAt:new Date().toISOString()});
+    entries.sort((a,b)=>(a.date+a.start).localeCompare(b.date+b.start));
+    saveApp();quick.close();render();
+  };
   function draw() {
     const month = ensureMonth(currentMonth);
     if (!selected.startsWith(currentMonth+'-')) selected = currentMonth+'-01';
-    const stamp = JSON.stringify([currentMonth,selected,scheduled(month),month.useShiftCalendar,(month.entries||[]).filter(e=>e.type==='compUse').map(e=>e.date)]);
+    const stamp = JSON.stringify([currentMonth,selected,scheduled(month),month.useShiftCalendar,(month.entries||[]).map(e=>[e.date,e.type,e.paidHours])]);
     if (stamp === snapshot) return;
     snapshot = stamp;
     const [y,m] = currentMonth.split('-').map(Number);
@@ -236,6 +315,12 @@
       for (const key of shifts) {
         lines.push(['sc-hours', qty(kinds[key][3])], ['sc-kind', {day:'День',night:'Ночь',short:'5/2'}[key]]);
       }
+      for (const e of month.entries || []) {
+        if (e.date === date && Object.hasOwn(categories,e.type)) {
+          const caption = {weekend:'Вых.',compEarn:'Банк',overtime:'С/у',overtimeComp:'С/у банк'}[e.type];
+          lines.push(['sc-kind', caption+' +'+qty(e.paidHours)]);
+        }
+      }
       if (leave) lines.push(['sc-kind','Отгул']);
       btn.setAttribute('aria-label', [date, ...shifts.map(key => kinds[key][1]+' '+qty(kinds[key][3])+' ч'),
         shifts.length ? '' : 'Выходной', leave ? 'Отгул' : ''].filter(Boolean).join(', '));
@@ -245,7 +330,7 @@
         line.textContent = label;
         btn.append(line);
       }
-      btn.onclick=()=>{selected=date;if(!editingId)el('entryDate').value=date;draw();};
+      btn.onclick=()=>{selected=date;if(!editingId)el('entryDate').value=date;draw();openWork(date);};
       grid.append(btn);
     }
     el('scDate').textContent='Смены на '+selected.split('-').reverse().join('.');
@@ -308,5 +393,5 @@
     if(el('nightAutoToggle').value==='0'){event.stopImmediatePropagation();render();}
   },true);
   draw();
-  if(ensureMonth(currentMonth).useShiftCalendar)render();
+  render();
 })();
