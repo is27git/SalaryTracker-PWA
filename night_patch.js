@@ -147,7 +147,7 @@
   if(oldNote)oldNote.replaceWith(note);else if(ledger)ledger.appendChild(note);
 
   const footer=document.querySelector('.footer');
-  if(footer)footer.textContent='PWA 5.7 · штатная ночь 7,5 ч · выходные: ночные по факту до 8 ч · авто-коррекция по отгулам · архив месяцев · PDF.';
+  if(footer)footer.textContent='PWA 5.8 · штатная ночь 7,5 ч · выходные: ночные по факту до 8 ч · авто-коррекция по отгулам · архив месяцев · PDF.';
 
   if(el('nightAutoToggle')){const p=ensureMonth(currentMonth).params;el('nightAutoToggle').value=p.nightAutoV45===true?'1':'0';}
   syncNightHours(true);render();
@@ -660,8 +660,8 @@
 
 (() => {
   const eyebrow=document.querySelector('.eyebrow');
-  if(eyebrow)eyebrow.textContent='Зарплата · журнал факта · прогноз · v5.7 PWA';
-  document.title='SalaryTracker 5.7 · Личный табель зарплаты';
+  if(eyebrow)eyebrow.textContent='Зарплата · журнал факта · прогноз · v5.8 PWA';
+  document.title='SalaryTracker 5.8 · Личный табель зарплаты';
   const PLAN_KEY='salaryTrackerPlanV1';
   const MODE_KEY='salaryTrackerModeV1';
   let mode='actual';
@@ -745,4 +745,31 @@
   el('salaryPlan').onclick=()=>switchBase('plan');
   paintMode();
   if(localStorage.getItem(MODE_KEY)==='plan')switchBase('plan');
+})();
+
+(() => {
+  const stats=document.querySelector('.ledger-stats');
+  if(stats){
+    const box=document.createElement('div');
+    box.className='stat';
+    box.style.gridColumn='1 / -1';
+    box.innerHTML='<span>Всего часов за месяц · смены + выходные + сверхурочные</span><b id="monthlyHoursLedger"></b>';
+    stats.prepend(box);
+  }
+  const first=el('effectiveBaseHours')?.closest('.row');
+  const anchor=first || el('effectiveBaseHours')?.parentElement;
+  if(anchor){
+    const row=document.createElement('div');
+    row.className=anchor.className;
+    row.innerHTML='<span>Всего часов за месяц</span><b id="monthlyHoursSummary"></b>';
+    anchor.before(row);
+  }
+  const before=render;
+  render=function(){
+    before();
+    const month=ensureMonth(currentMonth),p=effectiveParams(month.params,month.entries||[]);
+    const total=round2(num(p.baseHours)+num(p.weekendHours)+num(p.overtimeHours));
+    for(const id of ['monthlyHoursLedger','monthlyHoursSummary'])if(el(id))el(id).textContent=qty(total)+' ч';
+  };
+  render();
 })();
