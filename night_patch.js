@@ -147,7 +147,7 @@
   if(oldNote)oldNote.replaceWith(note);else if(ledger)ledger.appendChild(note);
 
   const footer=document.querySelector('.footer');
-  if(footer)footer.textContent='PWA 5.4 · штатная ночь 7,5 ч · выходные: ночные по факту до 8 ч · авто-коррекция по отгулам · архив месяцев · PDF.';
+  if(footer)footer.textContent='PWA 5.5 · штатная ночь 7,5 ч · выходные: ночные по факту до 8 ч · авто-коррекция по отгулам · архив месяцев · PDF.';
 
   if(el('nightAutoToggle')){const p=ensureMonth(currentMonth).params;el('nightAutoToggle').value=p.nightAutoV45===true?'1':'0';}
   syncNightHours(true);render();
@@ -251,7 +251,7 @@
   quick.setAttribute('aria-labelledby','scQuickTitle');
   quick.style.cssText='width:min(360px,92vw);box-sizing:border-box;padding:20px;background:#10253a;color:#edf6ff;border:1px solid #416381;border-radius:16px';
   quick.innerHTML = `<form style="display:grid;gap:12px">
-    <h3 id="scQuickTitle"></h3><label>Вид записи<select id="scQuickType"></select></label>
+    <h3 id="scQuickTitle"></h3><label>Вид записи<select id="scQuickType"></select></label><small>На дату — один вид дополнительного выхода. Сохрани новый вариант, чтобы заменить прежний.</small>
     <div style="display:flex;gap:12px"><label>С какого времени<input type="text" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="2000 → 20:00" id="scFrom" required></label>
     <label>До какого времени<input type="text" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="2200 → 22:00" id="scTo"></label></div>
     <button type="button" id="scSaveStart">Сохранить вход · завершить позже</button><small>До указания ухода выход хранится отдельно и ожидает завершения.</small><output id="scCredit" aria-live="polite"></output><button class="primary" type="submit">Записать в журнал</button>
@@ -261,6 +261,51 @@
   const categories = {weekend:'Выходной — за оплату',compEarn:'Выходной — за отгул',
     overtime:'Сверхурочные — за оплату',overtimeComp:typeLabels[extraBank]};
   let pendingId = null;
+  let extraEditId = null;
+  function isExtra(entry) { return Object.hasOwn(categories,entry.type); }
+  function saveExclusiveExtra(month, data, id) {
+    const others = month.entries.filter(e => e.date === data.date && isExtra(e) && e.id !== id);
+    if (others.length && !confirm('На эту дату уже есть дополнительный выход. Заменить его выбранным вариантом?')) return false;
+    const old = month.entries.find(e => e.id === id);
+    const entry = {...old,...data,id:old?.id || Date.now().toString(36)+Math.random().toString(36).slice(2,7),
+      createdAt:old?.createdAt || new Date().toISOString()};
+    month.entries = month.entries.filter(e => e.id !== id && !(e.date === data.date && isExtra(e)));
+    month.entries.push(entry);
+    month.entries.sort((a,b)=>(a.date+a.start).localeCompare(b.date+b.start));
+    month.pendingWork = pendingList(month).filter(p => p.date !== data.date);
+    saveApp();return true;
+  }
+  // The original journal button captured its handler at startup.
+  el('addEntryBtn').addEventListener('click', event => {
+    if (!Object.hasOwn(categories,el('entryType').value)) return;
+    event.stopImmediatePropagation();
+    const data = validateEntry();
+    if (!data) return;
+    if (saveExclusiveExtra(ensureMonth(currentMonth),data,editingId)) {
+      resetEntryForm();render();
+    }
+  },true);
+  const existingWork = document.createElement('div');
+  existingWork.id = 'scExistingWork';
+  quick.querySelector('form').prepend(existingWork);
+  function showExistingWork(date) {
+    existingWork.replaceChildren();
+    const month=ensureMonth(workMonth);
+    for (const entry of month.entries.filter(e=>e.date===date&&isExtra(e))) {
+      const row=document.createElement('div');
+      const text=document.createElement('span');
+      text.textContent=categories[entry.type]+' · '+entry.start+'–'+entry.end+' · '+qty(entry.paidHours)+' ч ';
+      const remove=document.createElement('button');
+      remove.type='button';remove.textContent='Удалить';
+      remove.onclick=()=>{
+        if(!confirm('Удалить '+categories[entry.type]+' за '+date+'?'))return;
+        month.entries=month.entries.filter(e=>e.id!==entry.id);
+        saveApp();quick.close();render();
+      };
+      row.append(text,remove);existingWork.append(row);
+    }
+  }
+
   let workMonth = '';
   let workDate = '';
   const unfinished = document.createElement('div');
@@ -310,9 +355,12 @@
       el('scCredit').textContent = 'Для завершённого выхода нажми «Записать в журнал».';return;
     }
     const month = ensureMonth(workMonth);
+    if (month.entries.some(e => e.date === workDate && isExtra(e))) {
+      el('scCredit').textContent='На эту дату уже есть завершённый выход. Удали его перед сохранением нового входа.';return;
+    }
     const item = {id:pendingId || Date.now().toString(36)+Math.random().toString(36).slice(2,7),
       date:workDate, type:el('scQuickType').value, start, end:'',createdAt:new Date().toISOString()};
-    month.pendingWork = [...pendingList(month).filter(p => p.id !== item.id),item];
+    month.pendingWork = [...pendingList(month).filter(p => p.date !== workDate),item];
     saveApp();quick.close();render();
   }
   el('scSaveStart').onclick = savePendingStart;
@@ -342,16 +390,25 @@
   }
   function openWork(date) {
     pendingId = null;
+    extraEditId = null;
     workMonth = currentMonth;
     workDate = date;
     const assigned = types(ensureMonth(currentMonth),date);
     el('scQuickTitle').textContent = 'Запись на '+date.split('-').reverse().join('.');
     const options = el('scQuickType');
     options.replaceChildren();
-    for (const key of assigned.length ? ['overtime',extraBank] : ['weekend','compEarn','overtime',extraBank]) options.add(new Option(categories[key],key));
+    for (const key of ['weekend','compEarn','overtime',extraBank]) options.add(new Option(categories[key],key));
     el('scFrom').value = assigned.length ? kinds[assigned[assigned.length-1]][2].split('–')[1] : '';
     el('scTo').value = '';
-    previewWork();quick.showModal();
+    const existing=ensureMonth(workMonth).entries.find(e=>e.date===date&&isExtra(e));
+    if(existing){
+      extraEditId=existing.id;
+      el('scQuickType').value=existing.type;
+      el('scFrom').value=existing.start||'';
+      el('scTo').value=existing.end||'';
+    }else if(assigned.length)el('scQuickType').value='overtime';
+    showExistingWork(date);
+    previewWork();if(!quick.open)quick.showModal();
   }
   for (const id of ['scFrom','scTo']) {
     el(id).addEventListener('blur', () => {
@@ -375,13 +432,11 @@
     if (!actual) {el('scCredit').textContent='Начало и окончание должны различаться.';return;}
     const work = ensureMonth(workMonth);
     if (pendingId && !pendingList(work).some(p => p.id === pendingId)) return;
-    const entries=work.entries;
-    entries.push({id:Date.now().toString(36)+Math.random().toString(36).slice(2,7),
-      date:workDate,type:el('scQuickType').value,start:el('scFrom').value,end:el('scTo').value,
-      actualHours:actual,paidHours:credit,comment:'',createdAt:new Date().toISOString()});
-    entries.sort((a,b)=>(a.date+a.start).localeCompare(b.date+b.start));
-    work.pendingWork = pendingList(work).filter(p => p.id !== pendingId);
-    saveApp();quick.close();render();
+    const data={date:workDate,type:el('scQuickType').value,start:el('scFrom').value,end:el('scTo').value,
+      actualHours:actual,paidHours:credit,comment:work.entries.find(e=>e.id===extraEditId)?.comment||''};
+    if(saveExclusiveExtra(work,data,extraEditId)){
+      quick.close();render();
+    }
   };
   function draw() {
     const month = ensureMonth(currentMonth);
@@ -537,4 +592,73 @@
   const previousRender=render;
   render=function(){previousRender();renderForecast();};
   renderForecast();
+})();
+
+(() => {
+  const PLAN_KEY='salaryTrackerPlanV1';
+  const MODE_KEY='salaryTrackerModeV1';
+  let mode='actual';
+  const actualSave=saveApp;
+  const controls=document.createElement('section');
+  controls.id='salaryModes';
+  controls.style.cssText='display:flex;gap:8px;flex-wrap:wrap;padding:12px 0';
+  controls.innerHTML='<button type="button" id="salaryActual">Факт</button><button type="button" id="salaryPlan">План</button><span id="salaryModeHint" style="flex-basis:100%"></span>';
+  document.querySelector('.wrap').prepend(controls);
+  const style=document.createElement('style');
+  style.textContent=`
+    body[data-salary-mode="actual"] { background:#0b1b2d; }
+    body[data-salary-mode="plan"] { background:#271436; }
+    body[data-salary-mode="plan"] .card,
+    body[data-salary-mode="plan"] #monthArchiveCard { background:#30213f; border-color:#78568d; }
+    body[data-salary-mode="plan"] .hero { background:#4a2c60; }
+    #salaryModes button { padding:12px 24px;border-radius:12px;border:1px solid #7188a1;color:#f5f7ff;background:#182f46; }
+    #salaryModes [aria-pressed="true"] { background:#216a86;border-color:#6ee7e4; }
+    body[data-salary-mode="plan"] #salaryModes [aria-pressed="true"] { background:#704390;border-color:#d8a4ff; }
+  `;
+  document.head.append(style);
+  function readStored(key) {
+    const raw=localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  }
+  function paintMode() {
+    document.body.dataset.salaryMode=mode;
+    el('salaryActual').setAttribute('aria-pressed',String(mode==='actual'));
+    el('salaryPlan').setAttribute('aria-pressed',String(mode==='plan'));
+    el('salaryModeHint').textContent=mode==='actual'
+      ? 'Факт · выполненные выходы и текущая ожидаемая зарплата.'
+      : 'План · отдельная база для будущих смен и выходов. Первый план создан как копия факта.';
+    if(el('monthArchiveCard')) {
+      const heading=el('monthArchiveCard').querySelector('h2');
+      if(heading)heading.textContent='Архив месяцев · '+(mode==='actual'?'Факт':'План');
+    }
+  }
+  saveApp=function(){
+    app.currentMonth=currentMonth;
+    if(mode==='actual')actualSave();
+    else localStorage.setItem(PLAN_KEY,JSON.stringify(app));
+  };
+  function switchBase(next) {
+    if(next===mode)return;
+    saveCurrentParams();
+    let target;
+    try {
+      target=readStored(next==='plan'?PLAN_KEY:APP_KEY);
+      if(!target && next==='plan')target=JSON.parse(JSON.stringify(app));
+      if(!target || typeof target.months!=='object' || !target.months || !target.presets)throw Error();
+      // Persist the initial clone before switching so failed storage cannot overwrite fact.
+      if(next==='plan')localStorage.setItem(PLAN_KEY,JSON.stringify(target));
+    }catch(error){alert('Не удалось открыть базу. Текущие данные сохранены.');return;}
+    app=target;mode=next;
+    currentMonth=app.currentMonth||Object.keys(app.months).sort().at(-1)||browserMonth();
+    const month=ensureMonth(currentMonth);
+    el('monthPicker').value=currentMonth;
+    writeParams(month.params);resetEntryForm();
+    localStorage.setItem(MODE_KEY,mode);
+    paintMode();render();
+    document.dispatchEvent(new Event('change'));
+  }
+  el('salaryActual').onclick=()=>switchBase('actual');
+  el('salaryPlan').onclick=()=>switchBase('plan');
+  paintMode();
+  if(localStorage.getItem(MODE_KEY)==='plan')switchBase('plan');
 })();
