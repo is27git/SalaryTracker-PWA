@@ -147,7 +147,7 @@
   if(oldNote)oldNote.replaceWith(note);else if(ledger)ledger.appendChild(note);
 
   const footer=document.querySelector('.footer');
-  if(footer)footer.textContent='PWA 5.8 · штатная ночь 7,5 ч · выходные: ночные по факту до 8 ч · авто-коррекция по отгулам · архив месяцев · PDF.';
+  if(footer)footer.textContent='PWA 5.9 · штатная ночь 7,5 ч · выходные: ночные по факту до 8 ч · авто-коррекция по отгулам · архив месяцев · PDF.';
 
   if(el('nightAutoToggle')){const p=ensureMonth(currentMonth).params;el('nightAutoToggle').value=p.nightAutoV45===true?'1':'0';}
   syncNightHours(true);render();
@@ -256,22 +256,36 @@
   };
 
   const quick = document.createElement('dialog');
+  quick.id='scQuick';
   quick.setAttribute('aria-labelledby','scQuickTitle');
   quick.style.cssText='width:min(360px,92vw);box-sizing:border-box;padding:20px;background:#10253a;color:#edf6ff;border:1px solid #416381;border-radius:16px';
   quick.innerHTML = `<form style="display:grid;gap:12px">
-    <h3 id="scQuickTitle"></h3><label>Вид записи<select id="scQuickType"></select></label><small>На дату — один вид дополнительного выхода. Сохрани новый вариант, чтобы заменить прежний.</small>
+    <h3 id="scQuickTitle"></h3><label>Вид записи<select id="scQuickType"></select></label><small>Дополнительный выход можно заменить новым вариантом. Использованный отгул учитывается отдельно.</small>
     <div style="display:flex;gap:12px"><label>С какого времени<input type="text" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="2000 → 20:00" id="scFrom" required></label>
     <label>До какого времени<input type="text" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="2200 → 22:00" id="scTo"></label></div>
-    <button type="button" id="scSaveStart">Сохранить вход · завершить позже</button><small>До указания ухода выход хранится отдельно и ожидает завершения.</small><output id="scCredit" aria-live="polite"></output><button class="primary" type="submit">Записать в журнал</button>
+    <button type="button" id="scSaveStart">Сохранить вход · завершить позже</button><small id="scPendingHint">До указания ухода выход хранится отдельно и ожидает завершения.</small><output id="scCredit" aria-live="polite"></output><button class="primary" type="submit">Записать в журнал</button>
     <button type="button" id="scConfigure">Расставить смены</button><button type="button" id="scCancel">Отмена</button>
     </form>`;
   panel.append(quick);
+  const quickStyle=document.createElement('style');
+  quickStyle.textContent=`#scQuick{max-height:90vh;overflow-y:auto}#scQuick button,#scUnfinished button,.sc-start-button{appearance:none;min-height:44px;padding:12px 16px;border:1px solid #508c99;border-radius:14px;background:#193e50;color:#e4fffc;font:inherit;font-weight:650;line-height:1.3;cursor:pointer;box-sizing:border-box}#scQuick button:active,#scUnfinished button:active,.sc-start-button:active{filter:brightness(1.2)}#scQuick #scConfigure{background:#223c60;border-color:#6288b6}#scQuick #scCancel{background:#1a2d40;border-color:#526a82;color:#d2dfed}#scQuick #scSaveStart,.sc-start-button{background:#3a3359;border-color:#9282bd;color:#f2eaff}#scQuick .sc-existing{display:grid;gap:10px;padding:14px;margin-bottom:10px;background:#0b1b2b;border:1px solid #3e5872;border-radius:14px}#scQuick .sc-record-actions{display:flex;gap:8px;flex-wrap:wrap}#scQuick button.sc-delete,#scUnfinished button:last-child{background:#482a3c;border-color:#a56780;color:#ffd6e1}#scQuick [hidden]{display:none!important}#scQuick label{min-width:0}#scQuick input{width:100%;box-sizing:border-box}`;
+  document.head.append(quickStyle);
   const categories = {weekend:'Выходной — за оплату',compEarn:'Выходной — за отгул',
     overtime:'Сверхурочные — за оплату',overtimeComp:typeLabels[extraBank]};
+  const recordLabels={...categories,compUse:typeLabels.compUse||'Отгул — использован'};
   let pendingId = null;
   let extraEditId = null;
   function isExtra(entry) { return Object.hasOwn(categories,entry.type); }
   function saveExclusiveExtra(month, data, id) {
+    const previous=month.entries.find(e=>e.id===id);
+    if(data.type==='compUse'){
+      const old=previous?.type==='compUse'?previous:null;
+      month.entries=month.entries.filter(e=>e.id!==old?.id);
+      month.entries.push({...old,...data,id:old?.id||Date.now().toString(36)+Math.random().toString(36).slice(2,7),createdAt:old?.createdAt||new Date().toISOString()});
+      month.entries.sort((a,b)=>(a.date+a.start).localeCompare(b.date+b.start));
+      saveApp();return true;
+    }
+    if(previous?.type==='compUse')id=null;
     const others = month.entries.filter(e => e.date === data.date && isExtra(e) && e.id !== id);
     if (others.length && !confirm('На эту дату уже есть дополнительный выход. Заменить его выбранным вариантом?')) return false;
     const old = month.entries.find(e => e.id === id);
@@ -299,18 +313,21 @@
   function showExistingWork(date) {
     existingWork.replaceChildren();
     const month=ensureMonth(workMonth);
-    for (const entry of month.entries.filter(e=>e.date===date&&isExtra(e))) {
-      const row=document.createElement('div');
+    for (const entry of month.entries.filter(e=>e.date===date&&Object.hasOwn(recordLabels,e.type))) {
+      const row=document.createElement('div');row.className='sc-existing';
       const text=document.createElement('span');
-      text.textContent=categories[entry.type]+' · '+entry.start+'–'+entry.end+' · '+qty(entry.paidHours)+' ч ';
+      text.textContent=recordLabels[entry.type]+' · '+entry.start+'–'+entry.end+' · '+qty(entry.paidHours)+' ч ';
       const remove=document.createElement('button');
-      remove.type='button';remove.textContent='Удалить';
+      remove.type='button';remove.textContent='Удалить';remove.className='sc-delete';
       remove.onclick=()=>{
-        if(!confirm('Удалить '+categories[entry.type]+' за '+date+'?'))return;
+        if(!confirm('Удалить '+recordLabels[entry.type]+' за '+date+'?'))return;
         month.entries=month.entries.filter(e=>e.id!==entry.id);
         saveApp();quick.close();render();
       };
-      row.append(text,remove);existingWork.append(row);
+      const edit=document.createElement('button');edit.type='button';edit.textContent='Изменить';
+      edit.onclick=()=>{extraEditId=entry.id;if(!Array.from(el('scQuickType').options).some(o=>o.value===entry.type))el('scQuickType').add(new Option(recordLabels[entry.type],entry.type));el('scQuickType').value=entry.type;el('scFrom').value=entry.start;el('scTo').value=entry.end;previewWork();};
+      const actions=document.createElement('div');actions.className='sc-record-actions';actions.append(edit,remove);
+      row.append(text,actions);existingWork.append(row);
     }
   }
 
@@ -353,6 +370,7 @@
     }
   }
   function savePendingStart() {
+    if(el('scQuickType').value==='compUse')return;
     const start = normalizeClockValue(el('scFrom').value);
     const end = normalizeClockValue(el('scTo').value);
     if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(start)) {
@@ -372,7 +390,7 @@
   }
   el('scSaveStart').onclick = savePendingStart;
   const journalStart = document.createElement('button');
-  journalStart.type = 'button';
+  journalStart.type = 'button';journalStart.className='sc-start-button';
   journalStart.textContent = 'Сохранить только вход';
   el('addEntryBtn').after(journalStart);
   journalStart.onclick = () => {
@@ -392,8 +410,10 @@
   }
   function previewWork() {
     const {actual,credit} = quickHours();
+    const used=el('scQuickType').value==='compUse';
+    el('scSaveStart').hidden=used;el('scPendingHint').hidden=used;
     const bank = ['compEarn', extraBank].includes(el('scQuickType').value);
-    el('scCredit').textContent = actual ? 'Факт: '+qty(actual)+' ч · '+(bank?'В банк: ':'К оплате: ')+qty(credit)+' ч' : 'Укажи время начала и окончания.';
+    el('scCredit').textContent = actual ? 'Факт: '+qty(actual)+' ч · '+(used?'Списать из банка: ':bank?'В банк: ':'К оплате: ')+qty(credit)+' ч' : 'Укажи время начала и окончания.';
   }
   function openWork(date) {
     pendingId = null;
@@ -404,8 +424,8 @@
     el('scQuickTitle').textContent = 'Запись на '+date.split('-').reverse().join('.');
     const options = el('scQuickType');
     options.replaceChildren();
-    const allowed=assigned.length ? ['overtime',extraBank] : ['weekend','compEarn'];
-    for (const key of allowed) options.add(new Option(categories[key],key));
+    const allowed=assigned.length ? ['overtime',extraBank,'compUse'] : ['weekend','compEarn'];
+    for (const key of allowed) options.add(new Option(recordLabels[key],key));
     el('scFrom').value = assigned.length ? kinds[assigned[assigned.length-1]][2].split('–')[1] : '';
     el('scTo').value = '';
     const existing=ensureMonth(workMonth).entries.find(e=>e.date===date&&isExtra(e));
@@ -425,6 +445,13 @@
     });
   }
   quick.oninput = previewWork;
+  el('scQuickType').onchange=()=>{
+    const used=el('scQuickType').value==='compUse';
+    const old=ensureMonth(workMonth).entries.find(e=>e.id===extraEditId);
+    if(old&&((old.type==='compUse')!==used))extraEditId=null;
+    if(used){const assigned=types(ensureMonth(workMonth),workDate);if(assigned.length){const times=kinds[assigned[0]][2].split('–');el('scFrom').value=times[0];el('scTo').value=times[1];}}
+    previewWork();
+  };
   el('scCancel').onclick = ()=>quick.close();
   el('scConfigure').onclick = ()=>{quick.close();editShift(workDate);};
   quick.querySelector('form').onsubmit = event=>{
@@ -660,8 +687,8 @@
 
 (() => {
   const eyebrow=document.querySelector('.eyebrow');
-  if(eyebrow)eyebrow.textContent='Зарплата · журнал факта · прогноз · v5.8 PWA';
-  document.title='SalaryTracker 5.8 · Личный табель зарплаты';
+  if(eyebrow)eyebrow.textContent='Зарплата · журнал факта · прогноз · v5.9 PWA';
+  document.title='SalaryTracker 5.9 · Личный табель зарплаты';
   const PLAN_KEY='salaryTrackerPlanV1';
   const MODE_KEY='salaryTrackerModeV1';
   let mode='actual';
