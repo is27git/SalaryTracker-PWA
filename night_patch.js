@@ -147,7 +147,7 @@
   if(oldNote)oldNote.replaceWith(note);else if(ledger)ledger.appendChild(note);
 
   const footer=document.querySelector('.footer');
-  if(footer)footer.textContent='PWA 6.0 · штатная ночь 7,5 ч · выходные: ночные по факту до 8 ч · авто-коррекция по отгулам · архив месяцев · PDF.';
+  if(footer)footer.textContent='PWA 6.3 · штатная ночь 7,5 ч · выходные: ночные по факту до 8 ч · авто-коррекция по отгулам · архив месяцев · PDF.';
 
   if(el('nightAutoToggle')){const p=ensureMonth(currentMonth).params;el('nightAutoToggle').value=p.nightAutoV45===true?'1':'0';}
   syncNightHours(true);render();
@@ -208,7 +208,7 @@
   let selected = '', snapshot = '';
   function vacationDates(month) { return month.vacationDates || {}; }
   function scheduled(month) { return month.shiftCalendar || {}; }
-  function types(month,date) { return (scheduled(month)[date] || []).filter(k => Object.hasOwn(kinds,k)); }
+  function types(month,date) { return vacationDates(month)[date] ? [] : (scheduled(month)[date] || []).filter(k => Object.hasOwn(kinds,k)); }
   function totals(month) {
     let hours = 0, nights = 0, reduction = 0;
     for (const date of Object.keys(scheduled(month))) {
@@ -530,7 +530,7 @@
   vacationDialog.innerHTML=`<form><h3>Отпуск</h3>
     <label>Первый день<input id="scVacationFrom" type="date" required></label>
     <label>Последний день включительно<input id="scVacationTo" type="date" required></label>
-    <small>Отметки для справки. Смены, тарифные часы и банк отгулов автоматически не меняются. Отпускные введи отдельно в расчёте месяца.</small>
+    <small>Отпуск исключает смены за выбранные даты из обычных и ночных часов при расчёте по графику. Отпускные введи отдельно в расчёте месяца.</small>
     <output id="scVacationError" aria-live="polite"></output>
     <button class="sc-vacation-save" type="submit">Отметить отпуск</button>
     <button class="sc-vacation-remove" type="button" id="scVacationRemove">Убрать отпуск за период</button>
@@ -616,7 +616,7 @@
       if (leave) lines.push(['sc-kind','Отгул']);
       if (vacation) lines.push(['sc-kind','Отпуск']);
       btn.setAttribute('aria-label', [date, ...shifts.map(key => kinds[key][1]+' '+qty(kinds[key][3])+' ч'),
-        shifts.length ? '' : 'Выходной', leave ? 'Отгул' : '', vacation ? 'Отпуск' : ''].filter(Boolean).join(', '));
+        shifts.length || vacation ? '' : 'Выходной', leave ? 'Отгул' : '', vacation ? 'Отпуск' : ''].filter(Boolean).join(', '));
       for (const [cls,label] of lines) {
         const line = document.createElement('span');
         line.className = cls;
@@ -642,7 +642,7 @@
       el('scTypes').append(btn);
     }
     const vacationCount=Object.keys(vacationDates(month)).filter(date=>date.startsWith(currentMonth+'-')&&vacationDates(month)[date]).length;
-    el('scVacationHelp').textContent=vacationCount?'Отпуск в этом месяце: '+vacationCount+' дн. · отметки для справки, часы по графику сохранены.':'';
+    el('scVacationHelp').textContent=vacationCount?'Отпуск в этом месяце: '+vacationCount+' дн. · смены в отпуске исключены из расчёта по графику.':'';
     el('scUse').checked=!!month.useShiftCalendar;
     el('scHelp').textContent = month.useShiftCalendar
       ? 'Часы для зарплаты берутся из отмеченных смен. Отгул списывается из банка. Тарифные часы сохраняются. В ночную смену уменьшается доплата за пропущенные ночные часы.'
@@ -746,8 +746,8 @@
 
 (() => {
   const eyebrow=document.querySelector('.eyebrow');
-  if(eyebrow)eyebrow.textContent='Зарплата · журнал факта · прогноз · v6.0 PWA';
-  document.title='SalaryTracker 6.0 · Личный табель зарплаты';
+  if(eyebrow)eyebrow.textContent='Зарплата · журнал факта · прогноз · v6.3 PWA';
+  document.title='SalaryTracker 6.3 · Личный табель зарплаты';
   const PLAN_KEY='salaryTrackerPlanV1';
   const MODE_KEY='salaryTrackerModeV1';
   let mode='actual';
@@ -924,7 +924,7 @@
       const note=document.createElement('p');note.className='p-muted';
       note.textContent='Отпускные на руки: '+money(r.vacationPayNet)+(paymentDate(effective)?' · выплата '+paymentDate(effective):'')+'. Отдельная выплата включена в общий доход; начисления и НДФЛ по зарплате её не содержат.';
       const days=document.createElement('p');days.className='p-muted';
-      days.textContent=dates.length?'Отмеченные дни отпуска: '+dates.map(date=>date.split('-').reverse().join('.')).join(', ')+'. Отметки для справки, часы по графику сохранены.':'';
+      days.textContent=dates.length?'Отмеченные дни отпуска: '+dates.map(date=>date.split('-').reverse().join('.')).join(', ')+'. Смены в отпуске исключены из расчёта по графику.':'';
       report.querySelector('.p-total').before(title,note,days);
     }
     report.querySelector('.p-total').textContent='Всего на руки с авансом и отпускными: '+money(r.totalInHand);
