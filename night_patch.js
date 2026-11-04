@@ -147,7 +147,7 @@
   if(oldNote)oldNote.replaceWith(note);else if(ledger)ledger.appendChild(note);
 
   const footer=document.querySelector('.footer');
-  if(footer)footer.textContent='PWA 5.9 · штатная ночь 7,5 ч · выходные: ночные по факту до 8 ч · авто-коррекция по отгулам · архив месяцев · PDF.';
+  if(footer)footer.textContent='PWA 6.0 · штатная ночь 7,5 ч · выходные: ночные по факту до 8 ч · авто-коррекция по отгулам · архив месяцев · PDF.';
 
   if(el('nightAutoToggle')){const p=ensureMonth(currentMonth).params;el('nightAutoToggle').value=p.nightAutoV45===true?'1':'0';}
   syncNightHours(true);render();
@@ -181,6 +181,14 @@
       background:#d3d600;color:#282900;line-height:1.1; }
     #scGrid .sc-cell > span { flex-shrink:0; }
     #scGrid .sc-work { background:#0aa5d1;color:#ffffff;border-color:#168bb0; }
+    #scGrid .sc-vacation { background:#f2b55c;color:#362308;border-color:#d99a3e; }
+    #scVacation, #scVacationQuick { padding:12px 16px;border-radius:14px;border:1px solid #bd944f;background:#574022;color:#ffebc7;font:inherit;font-weight:650;margin-top:8px; }
+    #scVacationDialog { max-height:90vh;overflow-y:auto; }
+    #scVacationDialog form { display:grid;gap:12px; }
+    #scVacationDialog button { min-height:44px;font:inherit;font-weight:650;text-align:center;border-radius:14px;padding:12px 16px; }
+    #scVacationDialog .sc-vacation-save { background:#574022;border-color:#c59951;color:#ffebc7; }
+    #scVacationDialog .sc-vacation-remove { background:#482a3c;border-color:#a56780;color:#ffd6e1; }
+    #scVacationHelp { display:block;margin:8px 0;color:#ffdfad;font-size:12px;line-height:1.5; }
     #scGrid [aria-pressed="true"] { outline:2px solid #62daca;outline-offset:0; }
     #scGrid .sc-number { align-self:flex-start;font-size:9px;font-weight:600; }
     #scGrid .sc-hours { font-size:clamp(9px,2.5vw,14px);font-weight:700; }
@@ -189,7 +197,7 @@
   `;
   document.head.appendChild(style);
   panel.innerHTML = `<h2>График смен</h2><b id="scMonth"></b><div id="scGrid"></div>
-    <b id="scDate"></b><div id="scTypes" class="sc-choices"></div><button id="scSchedule" type="button">Настроить смену или заполнить график…</button>
+    <b id="scDate"></b><div id="scTypes" class="sc-choices"></div><button id="scSchedule" type="button">Настроить смену или заполнить график…</button> <button id="scVacation" type="button">Отпуск · отметить период</button><small id="scVacationHelp"></small>
     <label><input id="scUse" style="width:auto" type="checkbox"> Считать зарплату по графику</label>
     <small id="scHelp"></small>
     <details><summary>Как записать отгул в ночную смену?</summary>
@@ -198,6 +206,7 @@
   document.querySelector('.wrap header').after(panel);
   const grid = el('scGrid');
   let selected = '', snapshot = '';
+  function vacationDates(month) { return month.vacationDates || {}; }
   function scheduled(month) { return month.shiftCalendar || {}; }
   function types(month,date) { return (scheduled(month)[date] || []).filter(k => Object.hasOwn(kinds,k)); }
   function totals(month) {
@@ -264,7 +273,7 @@
     <div style="display:flex;gap:12px"><label>С какого времени<input type="text" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="2000 → 20:00" id="scFrom" required></label>
     <label>До какого времени<input type="text" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="2200 → 22:00" id="scTo"></label></div>
     <button type="button" id="scSaveStart">Сохранить вход · завершить позже</button><small id="scPendingHint">До указания ухода выход хранится отдельно и ожидает завершения.</small><output id="scCredit" aria-live="polite"></output><button class="primary" type="submit">Записать в журнал</button>
-    <button type="button" id="scConfigure">Расставить смены</button><button type="button" id="scCancel">Отмена</button>
+    <button type="button" id="scVacationQuick">Отпуск · отметить период</button><button type="button" id="scConfigure">Расставить смены</button><button type="button" id="scCancel">Отмена</button>
     </form>`;
   panel.append(quick);
   const quickStyle=document.createElement('style');
@@ -435,6 +444,7 @@
       el('scFrom').value=existing.start||'';
       el('scTo').value=existing.end||'';
     }else if(assigned.length)el('scQuickType').value='overtime';
+    el('scVacationQuick').textContent=vacationDates(ensureMonth(workMonth))[date]?'Отпуск · изменить или убрать':'Отпуск · отметить период';
     showExistingWork(date);
     previewWork();if(!quick.open)quick.showModal();
   }
@@ -454,6 +464,7 @@
   };
   el('scCancel').onclick = ()=>quick.close();
   el('scConfigure').onclick = ()=>{quick.close();editShift(workDate);};
+  el('scVacationQuick').onclick=()=>{quick.close();openVacation(workDate);};
   quick.querySelector('form').onsubmit = event=>{
     event.preventDefault();
     const clocks = ['scFrom','scTo'].map(id => normalizeClockValue(el(id).value));
@@ -475,7 +486,7 @@
   };
   const shiftEditor=document.createElement('dialog');
   shiftEditor.className='sc-editor';
-  shiftEditor.innerHTML='<h3 id="scEditDate"></h3><div class="sc-choices" id="scEditChoices"></div><p><label>График с выбранной даты<select id="scCycle"><option value="44">4/4 · день, день, ночь, ночь, 4 выходных</option><option value="22">2/2 · две дневные, два выходных</option><option value="52">5/2 · понедельник–пятница, по 8 ч</option></select></label></p><button type="button" id="scApply">Заполнить до конца месяца</button> <button type="button" id="scDismiss">Закрыть</button>';
+  shiftEditor.innerHTML='<h3 id="scEditDate"></h3><div class="sc-choices" id="scEditChoices"></div><p><label>График с выбранной даты<select id="scCycle"><option value="44">4/4 · день, день, ночь, ночь, 4 выходных</option><option value="22">2/2 · две дневные, два выходных</option><option value="52">5/2 · понедельник–пятница, по 8 ч</option></select></label></p><button type="button" id="scEditVacation">Отпуск · отметить период</button><p></p><button type="button" id="scApply">Заполнить до конца месяца</button> <button type="button" id="scDismiss">Закрыть</button>';
   panel.append(shiftEditor);
   function editShift(date){
     selected=date;draw();
@@ -514,6 +525,50 @@
   };
   el('scDismiss').onclick=()=>shiftEditor.close();
   el('scSchedule').onclick=()=>editShift(selected);
+  const vacationDialog=document.createElement('dialog');
+  vacationDialog.id='scVacationDialog';vacationDialog.className='sc-editor';
+  vacationDialog.innerHTML=`<form><h3>Отпуск</h3>
+    <label>Первый день<input id="scVacationFrom" type="date" required></label>
+    <label>Последний день включительно<input id="scVacationTo" type="date" required></label>
+    <small>Отметки для справки. Смены, тарифные часы и банк отгулов автоматически не меняются. Отпускные введи отдельно в расчёте месяца.</small>
+    <output id="scVacationError" aria-live="polite"></output>
+    <button class="sc-vacation-save" type="submit">Отметить отпуск</button>
+    <button class="sc-vacation-remove" type="button" id="scVacationRemove">Убрать отпуск за период</button>
+    <button type="button" id="scVacationCancel">Отмена</button></form>`;
+  panel.append(vacationDialog);
+  function openVacation(date){
+    el('scVacationFrom').value=date;el('scVacationTo').value=date;
+    el('scVacationError').textContent='';vacationDialog.showModal();
+  }
+  function vacationRange(from,to){
+    const parse=value=>{
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(value))return null;
+      const date=new Date(value+'T12:00:00Z');
+      return Number.isFinite(date.getTime())&&date.toISOString().slice(0,10)===value?date:null;
+    };
+    const first=parse(from),last=parse(to);
+    if(!first||!last||first>last)return null;
+    const count=Math.round((last-first)/86400000)+1;
+    if(count>366)return null;
+    return Array.from({length:count},(_,i)=>new Date(first.getTime()+i*86400000).toISOString().slice(0,10));
+  }
+  function setVacationRange(mark){
+    const dates=vacationRange(el('scVacationFrom').value,el('scVacationTo').value);
+    if(!dates){el('scVacationError').textContent='Проверь даты: окончание не раньше начала, период — до 366 дней.';return;}
+    saveCurrentParams();
+    for(const date of dates){
+      const month=mark?ensureMonth(date.slice(0,7)):app.months[date.slice(0,7)];
+      if(!month)continue;
+      month.vacationDates ||= {};
+      if(mark)month.vacationDates[date]=true;else delete month.vacationDates[date];
+    }
+    saveApp();vacationDialog.close();render();document.dispatchEvent(new Event('change'));
+  }
+  el('scVacation').onclick=()=>openVacation(selected);
+  el('scEditVacation').onclick=()=>{shiftEditor.close();openVacation(selected);};
+  vacationDialog.querySelector('form').onsubmit=event=>{event.preventDefault();setVacationRange(true);};
+  el('scVacationRemove').onclick=()=>setVacationRange(false);
+  el('scVacationCancel').onclick=()=>vacationDialog.close();
   function bindDay(btn,date){
     let timer,held=false,x,y;
     const cancel=()=>clearTimeout(timer);
@@ -531,7 +586,7 @@
   function draw() {
     const month = ensureMonth(currentMonth);
     if (!selected.startsWith(currentMonth+'-')) selected = currentMonth+'-01';
-    const stamp = JSON.stringify([currentMonth,selected,scheduled(month),month.useShiftCalendar,(month.entries||[]).map(e=>[e.date,e.type,e.paidHours])]);
+    const stamp = JSON.stringify([currentMonth,selected,scheduled(month),vacationDates(month),month.useShiftCalendar,(month.entries||[]).map(e=>[e.date,e.type,e.paidHours])]);
     if (stamp === snapshot && drawnMonth === month) return;
     drawnMonth = month;
     snapshot = stamp;
@@ -545,7 +600,8 @@
       const btn=document.createElement('button');
       const leave=(month.entries||[]).some(e=>e.type==='compUse'&&e.date===date);
       const shifts = types(month,date);
-      btn.className = 'sc-cell' + (shifts.length ? ' sc-work' : '');
+      const vacation=!!vacationDates(month)[date];
+      btn.className = 'sc-cell' + (shifts.length ? ' sc-work' : '') + (vacation ? ' sc-vacation' : '');
       btn.setAttribute('aria-pressed',String(date===selected));
       const lines = [['sc-number', String(i)]];
       for (const key of shifts) {
@@ -558,8 +614,9 @@
         }
       }
       if (leave) lines.push(['sc-kind','Отгул']);
+      if (vacation) lines.push(['sc-kind','Отпуск']);
       btn.setAttribute('aria-label', [date, ...shifts.map(key => kinds[key][1]+' '+qty(kinds[key][3])+' ч'),
-        shifts.length ? '' : 'Выходной', leave ? 'Отгул' : ''].filter(Boolean).join(', '));
+        shifts.length ? '' : 'Выходной', leave ? 'Отгул' : '', vacation ? 'Отпуск' : ''].filter(Boolean).join(', '));
       for (const [cls,label] of lines) {
         const line = document.createElement('span');
         line.className = cls;
@@ -584,6 +641,8 @@
       };
       el('scTypes').append(btn);
     }
+    const vacationCount=Object.keys(vacationDates(month)).filter(date=>date.startsWith(currentMonth+'-')&&vacationDates(month)[date]).length;
+    el('scVacationHelp').textContent=vacationCount?'Отпуск в этом месяце: '+vacationCount+' дн. · отметки для справки, часы по графику сохранены.':'';
     el('scUse').checked=!!month.useShiftCalendar;
     el('scHelp').textContent = month.useShiftCalendar
       ? 'Часы для зарплаты берутся из отмеченных смен. Отгул списывается из банка. Тарифные часы сохраняются. В ночную смену уменьшается доплата за пропущенные ночные часы.'
@@ -687,8 +746,8 @@
 
 (() => {
   const eyebrow=document.querySelector('.eyebrow');
-  if(eyebrow)eyebrow.textContent='Зарплата · журнал факта · прогноз · v5.9 PWA';
-  document.title='SalaryTracker 5.9 · Личный табель зарплаты';
+  if(eyebrow)eyebrow.textContent='Зарплата · журнал факта · прогноз · v6.0 PWA';
+  document.title='SalaryTracker 6.0 · Личный табель зарплаты';
   const PLAN_KEY='salaryTrackerPlanV1';
   const MODE_KEY='salaryTrackerModeV1';
   let mode='actual';
@@ -755,6 +814,14 @@
           }
           plan.shiftCalendar=schedule;
           plan.factScheduleSnapshot=JSON.parse(JSON.stringify(source));
+          const factVacation=fact.vacationDates||{},previousVacation=plan.factVacationSnapshot||{};
+          const planVacation=plan.vacationDates||{};
+          for(const date of new Set([...Object.keys(factVacation),...Object.keys(previousVacation)])){
+            if(!!planVacation[date]!==!!previousVacation[date])continue;
+            if(factVacation[date])planVacation[date]=true;else delete planVacation[date];
+          }
+          plan.vacationDates=planVacation;
+          plan.factVacationSnapshot=JSON.parse(JSON.stringify(factVacation));
         }
         localStorage.setItem(PLAN_KEY,JSON.stringify(target));
       }
@@ -798,5 +865,82 @@
     const total=round2(num(p.baseHours)+num(p.weekendHours)+num(p.overtimeHours));
     for(const id of ['monthlyHoursLedger','monthlyHoursSummary'])if(el(id))el(id).textContent=qty(total)+' ч';
   };
+  render();
+})();
+
+(() => {
+  // Vacation pay is a separate NET payment: do not tax it again or change salary due.
+  defaults.vacationPayNet=0;
+  defaults.vacationPayDate='';
+  const fields=document.createElement('div');
+  fields.id='vacationPayment';
+  fields.style.cssText='grid-column:1 / -1;border:1px solid #a47f43;border-radius:16px;padding:14px;background:rgba(242,181,92,.07)';
+  fields.innerHTML=`<h3 style="margin:0 0 12px">Отпускные · отдельная выплата</h3><div class="fields">
+    <label><div class="label"><span>Отпускные на руки, ₽</span></div><input id="vacationPayNet" inputmode="decimal" placeholder="0" aria-describedby="vacationPayHint"></label>
+    <label><div class="label"><span>Дата выплаты</span><span class="hint">необязательно</span></div><input id="vacationPayDate" type="date"></label></div>
+    <p class="small" id="vacationPayHint" style="margin-bottom:0;line-height:1.5">Введи сумму, которая пришла на карту, уже после налога. Она добавится к общему доходу этого расчётного месяца и отобразится отдельно от зарплаты. Дата нужна для справки.</p>`;
+  el('advance').closest('.fields').append(fields);
+  const previousRead=readParams;
+  readParams=function(){
+    const p=previousRead(),net=round2(Math.max(0,num(el('vacationPayNet').value))),date=el('vacationPayDate').value||'';
+    // Keep the payment outside params too: older bootstrap renders rebuild params.
+    ensureMonth(currentMonth).vacationPayment={net,date};
+    return {...p,vacationPayNet:net,vacationPayDate:date};
+  };
+  const previousWrite=writeParams;
+  writeParams=function(p){
+    previousWrite(p);
+    const payment=app.months[currentMonth]?.vacationPayment;
+    el('vacationPayNet').value=String(Math.max(0,num(payment?.net??p?.vacationPayNet))).replace('.',',');
+    el('vacationPayDate').value=payment?.date??p?.vacationPayDate??'';
+  };
+  const previousCalculate=calculate;
+  calculate=function(p,overrides={}){
+    const r=previousCalculate(p,overrides);
+    const vacationPayNet=round2(Math.max(0,num({...p,...overrides}.vacationPayNet)));
+    return {...r,salaryInHand:r.totalInHand,vacationPayNet,totalInHand:round2(r.totalInHand+vacationPayNet)};
+  };
+  const hero=el('totalInHand').closest('.hero');
+  hero.querySelector('.kicker').textContent='Всего на руки за месяц · зарплата, аванс и отпускные';
+  el('payNow').previousElementSibling.textContent='Зарплата к выплате · без отпускных';
+  el('gross').previousElementSibling.textContent='Начислено по зарплате';
+  const received=document.createElement('div');received.className='mini';received.style.marginTop='10px';
+  received.innerHTML='<span>Отпускные · отдельной выплатой</span><b class="accent" id="vacationPayHero"></b><small id="vacationPayDateHero" class="small"></small>';
+  hero.append(received);
+  const row=document.createElement('div');row.className='row';
+  row.innerHTML='<span>Отпускные на руки · отдельно</span><b id="vacationPayOut" class="accent"></b>';
+  el('mealOut').closest('.row').after(row);
+  function paymentDate(p){
+    const value=p.vacationPayDate||'';
+    return /^\d{4}-\d{2}-\d{2}$/.test(value)?value.split('-').reverse().join('.'):'';
+  }
+  const previousPrint=renderPrint;
+  renderPrint=function(params,entries,effective,r){
+    previousPrint(params,entries,effective,r);
+    const report=el('printReport'),month=ensureMonth(currentMonth);
+    const dates=Object.keys(month.vacationDates||{}).filter(date=>date.startsWith(currentMonth+'-')&&month.vacationDates[date]).sort();
+    if(dates.length||r.vacationPayNet){
+      const title=document.createElement('h2');title.textContent='Отпуск и отпускные';
+      const note=document.createElement('p');note.className='p-muted';
+      note.textContent='Отпускные на руки: '+money(r.vacationPayNet)+(paymentDate(effective)?' · выплата '+paymentDate(effective):'')+'. Отдельная выплата включена в общий доход; начисления и НДФЛ по зарплате её не содержат.';
+      const days=document.createElement('p');days.className='p-muted';
+      days.textContent=dates.length?'Отмеченные дни отпуска: '+dates.map(date=>date.split('-').reverse().join('.')).join(', ')+'. Отметки для справки, часы по графику сохранены.':'';
+      report.querySelector('.p-total').before(title,note,days);
+    }
+    report.querySelector('.p-total').textContent='Всего на руки с авансом и отпускными: '+money(r.totalInHand);
+    const box=report.querySelector('.p-summary .p-box:last-child');
+    if(box?.firstChild?.nodeType===3)box.firstChild.textContent='Всего на руки с отпускными';
+  };
+  const previousRender=render;
+  render=function(){
+    previousRender();
+    const month=ensureMonth(currentMonth),p=effectiveParams(month.params,month.entries||[]),r=calculate(p);
+    el('vacationPayHero').textContent=money(r.vacationPayNet);
+    el('vacationPayOut').textContent=money(r.vacationPayNet);
+    el('vacationPayDateHero').textContent=paymentDate(p)?'Дата выплаты: '+paymentDate(p):'';
+  };
+  for(const id of ['vacationPayNet','vacationPayDate'])el(id).addEventListener('input',()=>render());
+  el('vacationPayNet').addEventListener('blur',()=>{el('vacationPayNet').value=String(Math.max(0,num(el('vacationPayNet').value))).replace('.',',');render();});
+  writeParams(ensureMonth(currentMonth).params);
   render();
 })();
