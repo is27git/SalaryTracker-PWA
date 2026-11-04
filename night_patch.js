@@ -147,7 +147,7 @@
   if(oldNote)oldNote.replaceWith(note);else if(ledger)ledger.appendChild(note);
 
   const footer=document.querySelector('.footer');
-  if(footer)footer.textContent='PWA 5.5 · штатная ночь 7,5 ч · выходные: ночные по факту до 8 ч · авто-коррекция по отгулам · архив месяцев · PDF.';
+  if(footer)footer.textContent='PWA 5.6 · штатная ночь 7,5 ч · выходные: ночные по факту до 8 ч · авто-коррекция по отгулам · архив месяцев · PDF.';
 
   if(el('nightAutoToggle')){const p=ensureMonth(currentMonth).params;el('nightAutoToggle').value=p.nightAutoV45===true?'1':'0';}
   syncNightHours(true);render();
@@ -438,11 +438,13 @@
       quick.close();render();
     }
   };
+  let drawnMonth;
   function draw() {
     const month = ensureMonth(currentMonth);
     if (!selected.startsWith(currentMonth+'-')) selected = currentMonth+'-01';
     const stamp = JSON.stringify([currentMonth,selected,scheduled(month),month.useShiftCalendar,(month.entries||[]).map(e=>[e.date,e.type,e.paidHours])]);
-    if (stamp === snapshot) return;
+    if (stamp === snapshot && drawnMonth === month) return;
+    drawnMonth = month;
     snapshot = stamp;
     const [y,m] = currentMonth.split('-').map(Number);
     el('scMonth').textContent = monthTitle(currentMonth);
@@ -595,6 +597,9 @@
 })();
 
 (() => {
+  const eyebrow=document.querySelector('.eyebrow');
+  if(eyebrow)eyebrow.textContent='Зарплата · журнал факта · прогноз · v5.6 PWA';
+  document.title='SalaryTracker 5.6 · Личный табель зарплаты';
   const PLAN_KEY='salaryTrackerPlanV1';
   const MODE_KEY='salaryTrackerModeV1';
   let mode='actual';
@@ -607,10 +612,10 @@
   const style=document.createElement('style');
   style.textContent=`
     body[data-salary-mode="actual"] { background:#0b1b2d; }
-    body[data-salary-mode="plan"] { background:#271436; }
+    body[data-salary-mode="plan"] { background:#672c80; }
     body[data-salary-mode="plan"] .card,
-    body[data-salary-mode="plan"] #monthArchiveCard { background:#30213f; border-color:#78568d; }
-    body[data-salary-mode="plan"] .hero { background:#4a2c60; }
+    body[data-salary-mode="plan"] #monthArchiveCard { background:#492758; border-color:#b478c8; }
+    body[data-salary-mode="plan"] .hero { background:#692b82; }
     #salaryModes button { padding:12px 24px;border-radius:12px;border:1px solid #7188a1;color:#f5f7ff;background:#182f46; }
     #salaryModes [aria-pressed="true"] { background:#216a86;border-color:#6ee7e4; }
     body[data-salary-mode="plan"] #salaryModes [aria-pressed="true"] { background:#704390;border-color:#d8a4ff; }
@@ -626,7 +631,7 @@
     el('salaryPlan').setAttribute('aria-pressed',String(mode==='plan'));
     el('salaryModeHint').textContent=mode==='actual'
       ? 'Факт · выполненные выходы и текущая ожидаемая зарплата.'
-      : 'План · отдельная база для будущих смен и выходов. Первый план создан как копия факта.';
+      : 'План · график из факта с твоими плановыми изменениями.';
     if(el('monthArchiveCard')) {
       const heading=el('monthArchiveCard').querySelector('h2');
       if(heading)heading.textContent='Архив месяцев · '+(mode==='actual'?'Факт':'План');
@@ -640,16 +645,33 @@
   function switchBase(next) {
     if(next===mode)return;
     saveCurrentParams();
+    const selectedMonth=currentMonth;
     let target;
     try {
       target=readStored(next==='plan'?PLAN_KEY:APP_KEY);
       if(!target && next==='plan')target=JSON.parse(JSON.stringify(app));
       if(!target || typeof target.months!=='object' || !target.months || !target.presets)throw Error();
       // Persist the initial clone before switching so failed storage cannot overwrite fact.
-      if(next==='plan')localStorage.setItem(PLAN_KEY,JSON.stringify(target));
+      if(next==='plan') {
+        for(const [key,fact] of Object.entries(app.months)) {
+          if(!target.months[key])target.months[key]=JSON.parse(JSON.stringify(fact));
+          const plan=target.months[key];
+          const source=fact.shiftCalendar || {};
+          const previous=plan.factScheduleSnapshot || {};
+          const schedule=plan.shiftCalendar || {};
+          for(const date of new Set([...Object.keys(source),...Object.keys(previous)])) {
+            if(JSON.stringify(schedule[date])!==JSON.stringify(previous[date]))continue;
+            if(source[date])schedule[date]=source[date].slice();
+            else delete schedule[date];
+          }
+          plan.shiftCalendar=schedule;
+          plan.factScheduleSnapshot=JSON.parse(JSON.stringify(source));
+        }
+        localStorage.setItem(PLAN_KEY,JSON.stringify(target));
+      }
     }catch(error){alert('Не удалось открыть базу. Текущие данные сохранены.');return;}
     app=target;mode=next;
-    currentMonth=app.currentMonth||Object.keys(app.months).sort().at(-1)||browserMonth();
+    currentMonth=selectedMonth||browserMonth();
     const month=ensureMonth(currentMonth);
     el('monthPicker').value=currentMonth;
     writeParams(month.params);resetEntryForm();
