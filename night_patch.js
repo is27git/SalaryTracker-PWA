@@ -147,7 +147,7 @@
   if(oldNote)oldNote.replaceWith(note);else if(ledger)ledger.appendChild(note);
 
   const footer=document.querySelector('.footer');
-  if(footer)footer.textContent='PWA 5.3 · штатная ночь 7,5 ч · выходные: ночные по факту до 8 ч · авто-коррекция по отгулам · архив месяцев · PDF.';
+  if(footer)footer.textContent='PWA 5.4 · штатная ночь 7,5 ч · выходные: ночные по факту до 8 ч · авто-коррекция по отгулам · архив месяцев · PDF.';
 
   if(el('nightAutoToggle')){const p=ensureMonth(currentMonth).params;el('nightAutoToggle').value=p.nightAutoV45===true?'1':'0';}
   syncNightHours(true);render();
@@ -253,13 +253,83 @@
   quick.innerHTML = `<form style="display:grid;gap:12px">
     <h3 id="scQuickTitle"></h3><label>Вид записи<select id="scQuickType"></select></label>
     <div style="display:flex;gap:12px"><label>С какого времени<input type="text" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="2000 → 20:00" id="scFrom" required></label>
-    <label>До какого времени<input type="text" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="2200 → 22:00" id="scTo" required></label></div>
-    <output id="scCredit" aria-live="polite"></output><button class="primary" type="submit">Записать в журнал</button>
+    <label>До какого времени<input type="text" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="2200 → 22:00" id="scTo"></label></div>
+    <button type="button" id="scSaveStart">Сохранить вход · завершить позже</button><small>До указания ухода выход хранится отдельно и ожидает завершения.</small><output id="scCredit" aria-live="polite"></output><button class="primary" type="submit">Записать в журнал</button>
     <button type="button" id="scConfigure">Расставить смены</button><button type="button" id="scCancel">Отмена</button>
     </form>`;
   panel.append(quick);
   const categories = {weekend:'Выходной — за оплату',compEarn:'Выходной — за отгул',
     overtime:'Сверхурочные — за оплату',overtimeComp:typeLabels[extraBank]};
+  let pendingId = null;
+  let workMonth = '';
+  let workDate = '';
+  const unfinished = document.createElement('div');
+  unfinished.id = 'scUnfinished';
+  panel.insertBefore(unfinished, quick);
+  function pendingList(month) { return month.pendingWork || []; }
+  function renderPending() {
+    unfinished.replaceChildren();
+    const month = ensureMonth(currentMonth);
+    for (const item of pendingList(month)) {
+      const row = document.createElement('div');
+      row.style.cssText = 'padding:10px;margin:8px 0;border:1px solid #536b80;border-radius:10px';
+      const resume = document.createElement('button');
+      resume.type = 'button';
+      resume.textContent = 'Завершить: '+item.date.split('-').reverse().join('.')+' · '+item.start+' · '+categories[item.type];
+      resume.onclick = () => {
+        selected = item.date;
+        draw();
+        openWork(item.date);
+        pendingId = item.id;
+        el('scQuickType').replaceChildren(new Option(categories[item.type],item.type));
+        el('scQuickType').value = item.type;
+        el('scFrom').value = item.start;
+        el('scTo').value = item.end || '';
+        el('scQuickTitle').textContent = 'Завершить выход '+item.date.split('-').reverse().join('.');
+        previewWork();
+      };
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.textContent = 'Удалить';
+      remove.onclick = () => {
+        if (!confirm('Удалить незавершённый выход?')) return;
+        month.pendingWork = pendingList(month).filter(p => p.id !== item.id);
+        saveApp();render();
+      };
+      row.append(resume, remove);
+      unfinished.append(row);
+    }
+  }
+  function savePendingStart() {
+    const start = normalizeClockValue(el('scFrom').value);
+    const end = normalizeClockValue(el('scTo').value);
+    if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(start)) {
+      el('scCredit').textContent = 'Укажи время входа, например 1002.';return;
+    }
+    if (end) {
+      el('scCredit').textContent = 'Для завершённого выхода нажми «Записать в журнал».';return;
+    }
+    const month = ensureMonth(workMonth);
+    const item = {id:pendingId || Date.now().toString(36)+Math.random().toString(36).slice(2,7),
+      date:workDate, type:el('scQuickType').value, start, end:'',createdAt:new Date().toISOString()};
+    month.pendingWork = [...pendingList(month).filter(p => p.id !== item.id),item];
+    saveApp();quick.close();render();
+  }
+  el('scSaveStart').onclick = savePendingStart;
+  const journalStart = document.createElement('button');
+  journalStart.type = 'button';
+  journalStart.textContent = 'Сохранить только вход';
+  el('addEntryBtn').after(journalStart);
+  journalStart.onclick = () => {
+    const date = el('entryDate').value, type = el('entryType').value;
+    if (editingId || !Object.hasOwn(categories,type) || date.slice(0,7) !== currentMonth) {
+      alert('Для начала выхода выбери дату текущего месяца и выходной или сверхурочные.');return;
+    }
+    const start = el('entryStart').value;
+    if (el('entryEnd').value.trim()) {alert('Окончание уже указано. Можно зафиксировать запись в журнале.');return;}
+    selected = date;openWork(date);el('scQuickType').replaceChildren(new Option(categories[type],type));
+    el('scQuickType').value=type;el('scFrom').value=start;savePendingStart();
+  };
   function quickHours() {
     const actual = durationHours(el('scFrom').value, el('scTo').value);
     const bank = el('scQuickType').value === 'compEarn';
@@ -271,6 +341,9 @@
     el('scCredit').textContent = actual ? 'Факт: '+qty(actual)+' ч · '+(bank?'В банк: ':'К оплате: ')+qty(credit)+' ч' : 'Укажи время начала и окончания.';
   }
   function openWork(date) {
+    pendingId = null;
+    workMonth = currentMonth;
+    workDate = date;
     const assigned = types(ensureMonth(currentMonth),date);
     el('scQuickTitle').textContent = 'Запись на '+date.split('-').reverse().join('.');
     const options = el('scQuickType');
@@ -300,11 +373,14 @@
     el('scTo').value = clocks[1];
     const {actual,credit}=quickHours();
     if (!actual) {el('scCredit').textContent='Начало и окончание должны различаться.';return;}
-    const entries=ensureMonth(currentMonth).entries;
+    const work = ensureMonth(workMonth);
+    if (pendingId && !pendingList(work).some(p => p.id === pendingId)) return;
+    const entries=work.entries;
     entries.push({id:Date.now().toString(36)+Math.random().toString(36).slice(2,7),
-      date:selected,type:el('scQuickType').value,start:el('scFrom').value,end:el('scTo').value,
+      date:workDate,type:el('scQuickType').value,start:el('scFrom').value,end:el('scTo').value,
       actualHours:actual,paidHours:credit,comment:'',createdAt:new Date().toISOString()});
     entries.sort((a,b)=>(a.date+a.start).localeCompare(b.date+b.start));
+    work.pendingWork = pendingList(work).filter(p => p.id !== pendingId);
     saveApp();quick.close();render();
   };
   function draw() {
@@ -377,7 +453,7 @@
       el('nightShifts').value=total.nights;
     }
     el('baseHours').readOnly=el('nightShifts').readOnly=!!month.useShiftCalendar;
-    originalRender();draw();
+    originalRender();draw();renderPending();
   };
   const entryLabel=el('entryDate').closest('label')?.querySelector('.label span');
   if(entryLabel)entryLabel.textContent='Дата начала смены';
@@ -408,4 +484,57 @@
   },true);
   draw();
   render();
+})();
+
+(() => {
+  const section = el('extraHours')?.closest('.weekend');
+  if (!section) return;
+  const label = document.createElement('label');
+  label.innerHTML = '<input id="extraNightShift" type="checkbox" style="width:auto"> Ночной выход (ориентир с 19:00)';
+  el('extraHours').closest('label').after(label);
+  const nightHint = document.createElement('small');
+  nightHint.id = 'extraNightHint';
+  label.after(nightHint);
+  const overtime = document.createElement('div');
+  overtime.style.marginTop='16px';
+  overtime.innerHTML = '<h3>Прогноз сверхурочных за оплату</h3><label>Часов (1–4)<input id="forecastOvertimeHours" type="number" min="1" max="4" step="1" value="1" inputmode="numeric"></label><div id="forecastOvertimeButtons" class="quick-buttons"></div><div class="weekend-result"><span>Добавится на руки</span><strong id="forecastOvertimeResult"></strong></div>';
+  section.append(overtime);
+  for (let hours=1;hours<=4;hours++) {
+    const btn=document.createElement('button');
+    btn.type='button';btn.textContent=hours+' ч';
+    btn.onclick=()=>{el('forecastOvertimeHours').value=hours;renderForecast();};
+    el('forecastOvertimeButtons').append(btn);
+  }
+  function estimatedNights(hours) {
+    // Starting at 19:00, each 24-hour period includes 22:00–06:00.
+    return round2(Math.floor(hours/24)*8+Math.max(0,Math.min(hours%24,11)-3));
+  }
+  function renderForecast() {
+    const month=ensureMonth(currentMonth);
+    const p=effectiveParams(month.params,month.entries||[]);
+    const baseline=calculate(p).totalInHand;
+    function weekendImpact(hours) {
+      const night=el('extraNightShift').checked ? estimatedNights(hours) : 0;
+      return round2(calculate({...p,weekendHours:num(p.weekendHours)+hours,
+        nightHoursActual:num(p.nightHoursActual)+night}).totalInHand-baseline);
+    }
+    const hours=Math.max(0,num(el('extraHours').value));
+    el('extraResult').textContent='+'+money(weekendImpact(hours));
+    el('extra12').textContent=money(weekendImpact(12));
+    el('extraPerHour').textContent=money(round2(weekendImpact(12)/12));
+    el('extraNightHint').textContent=el('extraNightShift').checked
+      ? 'Ориентир: '+qty(estimatedNights(hours))+' ночных ч, начало в 19:00, окно 22:00–06:00 без вычета обеда. Итог по факту — в журнале.'
+      : '';
+    const requested=num(el('forecastOvertimeHours').value);
+    const valid=Number.isInteger(requested)&&requested>=1&&requested<=4;
+    el('forecastOvertimeHours').setCustomValidity(valid?'':'Укажи целое число от 1 до 4');
+    el('forecastOvertimeResult').textContent=valid
+      ? '+'+money(round2(calculate({...p,overtimeHours:num(p.overtimeHours)+requested}).totalInHand-baseline))
+      : 'Выбери 1–4 часа';
+  }
+  el('extraNightShift').onchange=renderForecast;
+  el('forecastOvertimeHours').oninput=renderForecast;
+  const previousRender=render;
+  render=function(){previousRender();renderForecast();};
+  renderForecast();
 })();
