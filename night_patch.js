@@ -147,7 +147,7 @@
   if(oldNote)oldNote.replaceWith(note);else if(ledger)ledger.appendChild(note);
 
   const footer=document.querySelector('.footer');
-  if(footer)footer.textContent='PWA 5.6 · штатная ночь 7,5 ч · выходные: ночные по факту до 8 ч · авто-коррекция по отгулам · архив месяцев · PDF.';
+  if(footer)footer.textContent='PWA 5.7 · штатная ночь 7,5 ч · выходные: ночные по факту до 8 ч · авто-коррекция по отгулам · архив месяцев · PDF.';
 
   if(el('nightAutoToggle')){const p=ensureMonth(currentMonth).params;el('nightAutoToggle').value=p.nightAutoV45===true?'1':'0';}
   syncNightHours(true);render();
@@ -166,6 +166,14 @@
   panel.style.cssText = 'padding:14px;margin:12px 0';
   const style = document.createElement('style');
   style.textContent = `
+    .sc-editor { background:#11263b;color:#f2f8ff;border:1px solid #4a708b;border-radius:16px;padding:18px;width:min(390px,92vw);box-sizing:border-box; }
+    .sc-editor::backdrop { background:#0009; }
+    .sc-choices { display:grid;gap:6px;margin:8px 0; }
+    .sc-choices button, #scSchedule, .sc-editor button { padding:9px 12px;border-radius:10px;border:1px solid #47718b;background:#142f46;color:#edf9ff;text-align:left; }
+    .sc-choices button::before { content:'○';display:inline-block;width:1.7em;color:#a8c7da; }
+    .sc-choices button[aria-pressed="true"] { border-color:#60dccd;background:#16454d; }
+    .sc-choices button[aria-pressed="true"]::before { content:'✔';color:#79ffe0;font-weight:bold; }
+    #scGrid .sc-cell { user-select:none;-webkit-user-select:none; }
     #shiftCalendar { border-radius:18px; }
     #scGrid { display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;margin:12px 0;text-align:center; }
     #scGrid .sc-cell { padding:2px;min-width:0;width:100%;height:auto;min-height:0;max-height:none;aspect-ratio:1 / 1;contain:size;align-self:start;box-sizing:border-box;overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;
@@ -181,7 +189,7 @@
   `;
   document.head.appendChild(style);
   panel.innerHTML = `<h2>График смен</h2><b id="scMonth"></b><div id="scGrid"></div>
-    <b id="scDate"></b><div id="scTypes"></div>
+    <b id="scDate"></b><div id="scTypes" class="sc-choices"></div><button id="scSchedule" type="button">Настроить смену или заполнить график…</button>
     <label><input id="scUse" style="width:auto" type="checkbox"> Считать зарплату по графику</label>
     <small id="scHelp"></small>
     <details><summary>Как записать отгул в ночную смену?</summary>
@@ -326,8 +334,7 @@
         draw();
         openWork(item.date);
         pendingId = item.id;
-        el('scQuickType').replaceChildren(new Option(categories[item.type],item.type));
-        el('scQuickType').value = item.type;
+        if (Array.from(el('scQuickType').options).some(option=>option.value===item.type)) el('scQuickType').value=item.type;
         el('scFrom').value = item.start;
         el('scTo').value = item.end || '';
         el('scQuickTitle').textContent = 'Завершить выход '+item.date.split('-').reverse().join('.');
@@ -397,13 +404,14 @@
     el('scQuickTitle').textContent = 'Запись на '+date.split('-').reverse().join('.');
     const options = el('scQuickType');
     options.replaceChildren();
-    for (const key of ['weekend','compEarn','overtime',extraBank]) options.add(new Option(categories[key],key));
+    const allowed=assigned.length ? ['overtime',extraBank] : ['weekend','compEarn'];
+    for (const key of allowed) options.add(new Option(categories[key],key));
     el('scFrom').value = assigned.length ? kinds[assigned[assigned.length-1]][2].split('–')[1] : '';
     el('scTo').value = '';
     const existing=ensureMonth(workMonth).entries.find(e=>e.date===date&&isExtra(e));
     if(existing){
       extraEditId=existing.id;
-      el('scQuickType').value=existing.type;
+      el('scQuickType').value=allowed.includes(existing.type)?existing.type:allowed[0];
       el('scFrom').value=existing.start||'';
       el('scTo').value=existing.end||'';
     }else if(assigned.length)el('scQuickType').value='overtime';
@@ -418,7 +426,7 @@
   }
   quick.oninput = previewWork;
   el('scCancel').onclick = ()=>quick.close();
-  el('scConfigure').onclick = ()=>{quick.close();el('scTypes').querySelector('button')?.focus();};
+  el('scConfigure').onclick = ()=>{quick.close();editShift(workDate);};
   quick.querySelector('form').onsubmit = event=>{
     event.preventDefault();
     const clocks = ['scFrom','scTo'].map(id => normalizeClockValue(el(id).value));
@@ -438,6 +446,60 @@
       quick.close();render();
     }
   };
+  const shiftEditor=document.createElement('dialog');
+  shiftEditor.className='sc-editor';
+  shiftEditor.innerHTML='<h3 id="scEditDate"></h3><div class="sc-choices" id="scEditChoices"></div><p><label>График с выбранной даты<select id="scCycle"><option value="44">4/4 · день, день, ночь, ночь, 4 выходных</option><option value="22">2/2 · две дневные, два выходных</option><option value="52">5/2 · понедельник–пятница, по 8 ч</option></select></label></p><button type="button" id="scApply">Заполнить до конца месяца</button> <button type="button" id="scDismiss">Закрыть</button>';
+  panel.append(shiftEditor);
+  function editShift(date){
+    selected=date;draw();
+    el('scEditDate').textContent='Смена на '+date.split('-').reverse().join('.');
+    const month=ensureMonth(currentMonth), box=el('scEditChoices');
+    box.replaceChildren();
+    for(const key of [...Object.keys(kinds),'off']){
+      const b=document.createElement('button');
+      b.type='button';b.textContent=key==='off'?'Убрать смену':kinds[key][1]+' · '+qty(kinds[key][3])+' ч';
+      b.setAttribute('aria-pressed',String(types(month,date).includes(key)));
+      b.onclick=()=>{
+        month.shiftCalendar ||= {};
+        if(key==='off')delete month.shiftCalendar[date];else month.shiftCalendar[date]=[key];
+        shiftEditor.close();render();
+      };
+      box.append(b);
+    }
+    shiftEditor.showModal();
+  }
+  function cycleShift(pattern,offset,weekday){
+    if(pattern==='52')return weekday===0||weekday===6?null:'short';
+    if(pattern==='22')return offset%4<2?'day':null;
+    const phase=offset%8;return phase<2?'day':phase<4?'night':null;
+  }
+  el('scApply').onclick=()=>{
+    const month=ensureMonth(currentMonth),schedule={...scheduled(month)};
+    const [year,m,first]=selected.split('-').map(Number);
+    const last=new Date(year,m,0).getDate();
+    if(Object.keys(schedule).some(date=>date>=selected)&&!confirm('Заменить расставленные смены с '+selected+' до конца месяца?'))return;
+    for(let day=first;day<=last;day++){
+      const date=currentMonth+'-'+String(day).padStart(2,'0');
+      const kind=cycleShift(el('scCycle').value,day-first,new Date(year,m-1,day).getDay());
+      if(kind)schedule[date]=[kind];else delete schedule[date];
+    }
+    month.shiftCalendar=schedule;shiftEditor.close();render();
+  };
+  el('scDismiss').onclick=()=>shiftEditor.close();
+  el('scSchedule').onclick=()=>editShift(selected);
+  function bindDay(btn,date){
+    let timer,held=false,x,y;
+    const cancel=()=>clearTimeout(timer);
+    btn.onpointerdown=e=>{
+      cancel();held=false;if(e.button!==0)return;
+      x=e.clientX;y=e.clientY;
+      timer=setTimeout(()=>{held=true;editShift(date);},520);
+    };
+    btn.onpointermove=e=>{if(Math.hypot(e.clientX-x,e.clientY-y)>8)cancel();};
+    btn.onpointerup=btn.onpointercancel=btn.onpointerleave=cancel;
+    btn.oncontextmenu=e=>{e.preventDefault();cancel();if(!held){held=true;editShift(date);}};
+    btn.onclick=()=>{if(held){held=false;return;}selected=date;if(!editingId)el('entryDate').value=date;draw();openWork(date);};
+  }
   let drawnMonth;
   function draw() {
     const month = ensureMonth(currentMonth);
@@ -477,14 +539,14 @@
         line.textContent = label;
         btn.append(line);
       }
-      btn.onclick=()=>{selected=date;if(!editingId)el('entryDate').value=date;draw();openWork(date);};
+      bindDay(btn,date);
       grid.append(btn);
     }
     el('scDate').textContent='Смены на '+selected.split('-').reverse().join('.');
     el('scTypes').replaceChildren();
     for(const [key,[,name,time,h]] of Object.entries(kinds)){
       const btn=document.createElement('button'), active=types(month,selected).includes(key);
-      btn.textContent=(active?'✓ ':'')+name+' '+time+' · '+qty(h)+' ч';
+      btn.textContent=name+' '+time+' · '+qty(h)+' ч';
       btn.setAttribute('aria-pressed',String(active));
       btn.onclick=()=>{
         month.shiftCalendar ||= {};
@@ -598,8 +660,8 @@
 
 (() => {
   const eyebrow=document.querySelector('.eyebrow');
-  if(eyebrow)eyebrow.textContent='Зарплата · журнал факта · прогноз · v5.6 PWA';
-  document.title='SalaryTracker 5.6 · Личный табель зарплаты';
+  if(eyebrow)eyebrow.textContent='Зарплата · журнал факта · прогноз · v5.7 PWA';
+  document.title='SalaryTracker 5.7 · Личный табель зарплаты';
   const PLAN_KEY='salaryTrackerPlanV1';
   const MODE_KEY='salaryTrackerModeV1';
   let mode='actual';
