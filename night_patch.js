@@ -147,7 +147,7 @@
   if(oldNote)oldNote.replaceWith(note);else if(ledger)ledger.appendChild(note);
 
   const footer=document.querySelector('.footer');
-  if(footer)footer.textContent='PWA 5.2 · штатная ночь 7,5 ч · выходные: ночные по факту до 8 ч · авто-коррекция по отгулам · архив месяцев · PDF.';
+  if(footer)footer.textContent='PWA 5.3 · штатная ночь 7,5 ч · выходные: ночные по факту до 8 ч · авто-коррекция по отгулам · архив месяцев · PDF.';
 
   if(el('nightAutoToggle')){const p=ensureMonth(currentMonth).params;el('nightAutoToggle').value=p.nightAutoV45===true?'1':'0';}
   syncNightHours(true);render();
@@ -168,19 +168,19 @@
   style.textContent = `
     #shiftCalendar { border-radius:18px; }
     #scGrid { display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;margin:12px 0;text-align:center; }
-    #scGrid .sc-cell { padding:4px;min-width:0;width:100%;height:108px;min-height:108px;max-height:108px;box-sizing:border-box;overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;
-      align-items:center;justify-content:flex-start;gap:2px;border:1px solid #aeb000;border-radius:10px;
+    #scGrid .sc-cell { padding:2px;min-width:0;width:100%;height:auto;min-height:0;max-height:none;aspect-ratio:1 / 1;contain:size;align-self:start;box-sizing:border-box;overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;
+      align-items:center;justify-content:flex-start;gap:0;border:1px solid #aeb000;border-radius:10px;
       background:#d3d600;color:#282900;line-height:1.1; }
     #scGrid .sc-cell > span { flex-shrink:0; }
     #scGrid .sc-work { background:#0aa5d1;color:#ffffff;border-color:#168bb0; }
     #scGrid [aria-pressed="true"] { outline:2px solid #62daca;outline-offset:0; }
-    #scGrid .sc-number { align-self:flex-start;font-size:11px;font-weight:600; }
-    #scGrid .sc-hours { font-size:clamp(12px,3vw,16px);font-weight:700; }
-    #scGrid .sc-kind { font-size:10px;max-width:100%;overflow-wrap:anywhere; }
+    #scGrid .sc-number { align-self:flex-start;font-size:9px;font-weight:600; }
+    #scGrid .sc-hours { font-size:clamp(9px,2.5vw,14px);font-weight:700; }
+    #scGrid .sc-kind { font-size:8px;max-width:100%;white-space:nowrap; }
     #scHelp { display:block;margin:5px 0 10px;color:#bdd1de; }
   `;
   document.head.appendChild(style);
-  panel.innerHTML = `<h2>График смен</h2><b id="scMonth"></b><div id="scGrid"></div>
+  panel.innerHTML = `<h2>График смен</h2><b id="scMonth"></b><div id="scGrid"></div><small>Д — дневная · Н — ночная</small><br>
     <b id="scDate"></b><div id="scTypes"></div>
     <label><input id="scUse" style="width:auto" type="checkbox"> Считать зарплату по графику</label>
     <small id="scHelp"></small>
@@ -327,11 +327,11 @@
       btn.setAttribute('aria-pressed',String(date===selected));
       const lines = [['sc-number', String(i)]];
       for (const key of shifts) {
-        lines.push(['sc-hours', qty(kinds[key][3])], ['sc-kind', {day:'День',night:'Ночь',short:'5/2'}[key]]);
+        lines.push(['sc-hours', qty(kinds[key][3])+' '+{day:'Д',night:'Н',short:'Д'}[key]]);
       }
       for (const e of month.entries || []) {
         if (e.date === date && Object.hasOwn(categories,e.type)) {
-          const caption = {weekend:'Вых. — оплата',compEarn:'Вых. — отгул',overtime:'Сверх. оплата',overtimeComp:'Сверх. отгул'}[e.type];
+          const caption = {weekend:'Вых.оплата',compEarn:'Вых.отгул',overtime:'Св.опл',overtimeComp:'Св.отгул'}[e.type];
           lines.push(['sc-kind', caption], ['sc-kind', '+'+qty(e.paidHours)+' ч']);
         }
       }
