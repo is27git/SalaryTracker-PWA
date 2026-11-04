@@ -147,7 +147,7 @@
   if(oldNote)oldNote.replaceWith(note);else if(ledger)ledger.appendChild(note);
 
   const footer=document.querySelector('.footer');
-  if(footer)footer.textContent='PWA 5.0 · штатная ночь 7,5 ч · выходные: ночные по факту до 8 ч · авто-коррекция по отгулам · архив месяцев · PDF.';
+  if(footer)footer.textContent='PWA 5.1 · штатная ночь 7,5 ч · выходные: ночные по факту до 8 ч · авто-коррекция по отгулам · архив месяцев · PDF.';
 
   if(el('nightAutoToggle')){const p=ensureMonth(currentMonth).params;el('nightAutoToggle').value=p.nightAutoV45===true?'1':'0';}
   syncNightHours(true);render();
@@ -169,13 +169,13 @@
     #shiftCalendar { border-radius:18px; }
     #scGrid { display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;margin:12px 0;text-align:center; }
     #scGrid .sc-cell { padding:4px;min-width:0;min-height:54px;display:flex;flex-direction:column;
-      align-items:center;justify-content:flex-start;gap:2px;border:1px solid #b8d8bc;border-radius:10px;
-      background:#d8efd9;color:#234d35;line-height:1.1; }
-    #scGrid .sc-work { background:#193859;color:#f4f8ff;border-color:#355677; }
+      align-items:center;justify-content:flex-start;gap:2px;border:1px solid #aeb000;border-radius:10px;
+      background:#d3d600;color:#282900;line-height:1.1; }
+    #scGrid .sc-work { background:#0aa5d1;color:#ffffff;border-color:#168bb0; }
     #scGrid [aria-pressed="true"] { outline:2px solid #62daca;outline-offset:0; }
     #scGrid .sc-number { align-self:flex-start;font-size:11px;font-weight:600; }
     #scGrid .sc-hours { font-size:clamp(12px,3vw,16px);font-weight:700; }
-    #scGrid .sc-kind { font-size:10px; }
+    #scGrid .sc-kind { font-size:10px;max-width:100%;overflow-wrap:anywhere; }
     #scHelp { display:block;margin:5px 0 10px;color:#bdd1de; }
   `;
   document.head.appendChild(style);
@@ -251,8 +251,8 @@
   quick.style.cssText='width:min(360px,92vw);box-sizing:border-box;padding:20px;background:#10253a;color:#edf6ff;border:1px solid #416381;border-radius:16px';
   quick.innerHTML = `<form style="display:grid;gap:12px">
     <h3 id="scQuickTitle"></h3><label>Вид записи<select id="scQuickType"></select></label>
-    <div style="display:flex;gap:12px"><label>С какого времени<input type="time" id="scFrom" required></label>
-    <label>До какого времени<input type="time" id="scTo" required></label></div>
+    <div style="display:flex;gap:12px"><label>С какого времени<input type="text" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="2000 → 20:00" id="scFrom" required></label>
+    <label>До какого времени<input type="text" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="2200 → 22:00" id="scTo" required></label></div>
     <output id="scCredit" aria-live="polite"></output><button class="primary" type="submit">Записать в журнал</button>
     <button type="button" id="scConfigure">Расставить смены</button><button type="button" id="scCancel">Отмена</button>
     </form>`;
@@ -279,11 +279,24 @@
     el('scTo').value = '';
     previewWork();quick.showModal();
   }
+  for (const id of ['scFrom','scTo']) {
+    el(id).addEventListener('blur', () => {
+      el(id).value = normalizeClockValue(el(id).value);
+      previewWork();
+    });
+  }
   quick.oninput = previewWork;
   el('scCancel').onclick = ()=>quick.close();
   el('scConfigure').onclick = ()=>{quick.close();el('scTypes').querySelector('button')?.focus();};
   quick.querySelector('form').onsubmit = event=>{
     event.preventDefault();
+    const clocks = ['scFrom','scTo'].map(id => normalizeClockValue(el(id).value));
+    if (!clocks.every(value => /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value))) {
+      el('scCredit').textContent = 'Проверь время. Например, 2000 или 20:00.';
+      return;
+    }
+    el('scFrom').value = clocks[0];
+    el('scTo').value = clocks[1];
     const {actual,credit}=quickHours();
     if (!actual) {el('scCredit').textContent='Начало и окончание должны различаться.';return;}
     const entries=ensureMonth(currentMonth).entries;
@@ -317,8 +330,8 @@
       }
       for (const e of month.entries || []) {
         if (e.date === date && Object.hasOwn(categories,e.type)) {
-          const caption = {weekend:'Вых.',compEarn:'Банк',overtime:'С/у',overtimeComp:'С/у банк'}[e.type];
-          lines.push(['sc-kind', caption+' +'+qty(e.paidHours)]);
+          const caption = {weekend:'Вых. — оплата',compEarn:'Вых. — отгул',overtime:'Сверх. оплата',overtimeComp:'Сверх. отгул'}[e.type];
+          lines.push(['sc-kind', caption], ['sc-kind', '+'+qty(e.paidHours)+' ч']);
         }
       }
       if (leave) lines.push(['sc-kind','Отгул']);
