@@ -180,7 +180,7 @@
     #scHelp { display:block;margin:5px 0 10px;color:#bdd1de; }
   `;
   document.head.appendChild(style);
-  panel.innerHTML = `<h2>График смен</h2><b id="scMonth"></b><div id="scGrid"></div><small>Д — дневная · Н — ночная</small><br>
+  panel.innerHTML = `<h2>График смен</h2><b id="scMonth"></b><div id="scGrid"></div>
     <b id="scDate"></b><div id="scTypes"></div>
     <label><input id="scUse" style="width:auto" type="checkbox"> Считать зарплату по графику</label>
     <small id="scHelp"></small>
@@ -327,7 +327,7 @@
       btn.setAttribute('aria-pressed',String(date===selected));
       const lines = [['sc-number', String(i)]];
       for (const key of shifts) {
-        lines.push(['sc-hours', qty(kinds[key][3])+' '+{day:'Д',night:'Н',short:'Д'}[key]]);
+        lines.push(['sc-hours', qty(kinds[key][3])], ['sc-kind', {day:'День',night:'Ночь',short:'5/2'}[key]]);
       }
       for (const e of month.entries || []) {
         if (e.date === date && Object.hasOwn(categories,e.type)) {
