@@ -948,3 +948,30 @@
   writeParams(ensureMonth(currentMonth).params);
   render();
 })();
+
+(() => {
+  // Calendar mode owns night hours, including comp leave, independently of the manual toggle.
+  const beforeEffective = effectiveParams;
+  effectiveParams = function(params, entries) {
+    const p = beforeEffective(params, entries);
+    const month = app.months?.[currentMonth];
+    if (month?.useShiftCalendar && window.salaryShiftTotals) {
+      const rows = entries || [];
+      const total = window.salaryShiftTotals({...month, entries: rows});
+      const clock = value => Number(value.slice(0,2))*60+Number(value.slice(3));
+      let weekend = 0;
+      for (const e of rows) {
+        if (e.type !== 'weekend' || !e.start || !e.end) continue;
+        const a=clock(e.start); let b=clock(e.end);
+        if(b<a)b+=1440;
+        let mins=0;
+        for(const [lo,hi] of [[0,360],[1320,1800]])mins+=Math.max(0,Math.min(b,hi)-Math.max(a,lo));
+        weekend+=Math.min(480,mins)/60;
+      }
+      p.nightShifts = total.nights;
+      p.nightHoursActual = round2(Math.max(0,total.nights*7.5-total.reduction)+weekend);
+    }
+    return p;
+  };
+  render();
+})();
