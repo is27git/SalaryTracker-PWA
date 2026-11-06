@@ -11,7 +11,7 @@
     if (typeof defaults !== 'undefined') defaults.hourlyRate = 111.68;
     if (app.presets.gradeRates['4'] === undefined || near(app.presets.gradeRates['4'],116)) app.presets.gradeRates['4'] = 111.68;
     const g5 = Number(app.presets.gradeRates['5'] || 0);
-    if (near(g5,116) || near(g5,133.7)) delete app.presets.gradeRates['5'];
+    if (!g5 || near(g5,116) || near(g5,126) || near(g5,133.7)) app.presets.gradeRates['5'] = 123.71;
     if (app.presets.gradeRates['6'] === undefined || near(app.presets.gradeRates['6'],133.7)) app.presets.gradeRates['6'] = 133.7;
 
     Object.keys(app.presets.servicePcts).forEach(k => {
@@ -52,10 +52,10 @@
     }
 
     const presetNote = Array.from(document.querySelectorAll('.note')).find(n => n.textContent.includes('Пресеты:'));
-    if (presetNote) presetNote.innerHTML = '<b>Пресеты:</b> 4-й разряд = <b>111,68 ₽/ч</b>, 6-й = <b>133,7 ₽/ч</b>, 5-й пока не подтверждён. Для 4 лет предлагается <b>40%</b>, но конкретный месяц можно оставить 35% или изменить вручную по расчётке.';
+    if (presetNote) presetNote.innerHTML = '<b>Пресеты:</b> 4-й разряд = <b>111,68 ₽/ч</b>, 6-й = <b>133,7 ₽/ч</b>, 5-й = <b>123,71 ₽/ч</b>. Для 4 лет предлагается <b>40%</b>, но конкретный месяц можно оставить 35% или изменить вручную по расчётке.';
 
     const footer = document.querySelector('.footer');
-    if (footer) footer.textContent = 'PWA 4.4 · помесячный JSON-архив · 4-й 111,68 ₽/ч · 5-й — не подтверждён · 6-й 133,7 ₽/ч · БТК вручную по месяцу · журнал · PDF.';
+    if (footer) footer.textContent = 'PWA 4.4 · помесячный JSON-архив · 4-й 111,68 ₽/ч · 5-й 123,71 ₽/ч · 6-й 133,7 ₽/ч · БТК вручную по месяцу · журнал · PDF.';
 
     if (typeof saveApp === 'function') saveApp();
     if (typeof updatePresetHints === 'function') updatePresetHints();
