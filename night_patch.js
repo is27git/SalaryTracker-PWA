@@ -147,7 +147,7 @@
   if(oldNote)oldNote.replaceWith(note);else if(ledger)ledger.appendChild(note);
 
   const footer=document.querySelector('.footer');
-  if(footer)footer.textContent='PWA 6.4 · штатная ночь 7,5 ч · выходные: ночные по факту до 8 ч · авто-коррекция по отгулам · архив месяцев · PDF.';
+  if(footer)footer.textContent='PWA 6.7 · штатная ночь 7,5 ч · выходные: ночные по факту до 8 ч · авто-коррекция по отгулам · архив месяцев · PDF.';
 
   if(el('nightAutoToggle')){const p=ensureMonth(currentMonth).params;el('nightAutoToggle').value=p.nightAutoV45===true?'1':'0';}
   syncNightHours(true);render();
@@ -746,8 +746,8 @@
 
 (() => {
   const eyebrow=document.querySelector('.eyebrow');
-  if(eyebrow)eyebrow.textContent='Зарплата · журнал факта · прогноз · v6.4 PWA';
-  document.title='SalaryTracker 6.4 · Личный табель зарплаты';
+  if(eyebrow)eyebrow.textContent='Зарплата · журнал факта · прогноз · v6.7 PWA';
+  document.title='SalaryTracker 6.7 · Личный табель зарплаты';
   const PLAN_KEY='salaryTrackerPlanV1';
   const MODE_KEY='salaryTrackerModeV1';
   let mode='actual';
