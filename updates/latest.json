@@ -1,1 +1,1 @@
-{"versionCode":68,"versionName":"6.6","file":"SalaryTracker_6.6.apk","sha256":"c46cd09cb41608c46b6bf57610ed61cee56aa6e7f951d34677e9994a61d34006","notes":"Исправлено влияние ночного отгула на итог зарплаты по графику."}
+{"versionCode":69,"versionName":"6.7","file":"SalaryTracker_6.7.apk","sha256":"613470f9412540a773b47a253d1ef1eb48ed84b543c89dbb6a30d2bdb4edcc84","notes":"Сверка часов с расчёткой, премия со сверхурочных и контроль НДФЛ."}
