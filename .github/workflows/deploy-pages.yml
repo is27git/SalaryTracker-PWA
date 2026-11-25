@@ -49,7 +49,7 @@ jobs:
           if './month_archive.js' not in s:
               inserts.append('<script src="./month_archive.js"></script>')
           if './night_patch.js' not in s:
-              inserts.append('<script src="./night_patch.js"></script>')
+              inserts.append('<script src="./night_patch.js?v=6.9"></script>')
           if inserts and '</body>' in s:
               s=s.replace('</body>', '\n'.join(inserts)+'\n</body>', 1)
               p.write_text(s, encoding='utf-8')

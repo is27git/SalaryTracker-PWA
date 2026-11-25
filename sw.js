@@ -1,6 +1,6 @@
-const CACHE='salarytracker-pwa-v30';
-const ASSETS=['./','./index.html','./manifest.webmanifest','./tariff_patch.js','./month_archive.js','./night_patch.js','./icons/icon-192.png','./icons/icon-512.png','./icons/icon-maskable-512.png','./icons/apple-touch-icon.png'];
-self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)).then(()=>self.skipWaiting()));});
+const CACHE='salarytracker-pwa-v31';
+const ASSETS=['./','./index.html','./manifest.webmanifest','./tariff_patch.js','./month_archive.js','./night_patch.js?v=6.9','./icons/icon-192.png','./icons/icon-512.png','./icons/icon-maskable-512.png','./icons/apple-touch-icon.png'];
+self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS.map(url=>new Request(url,{cache:'reload'})))).then(()=>self.skipWaiting()));});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});
 self.addEventListener('fetch',e=>{
   if(e.request.method!=='GET') return;
