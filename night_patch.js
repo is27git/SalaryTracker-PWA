@@ -975,3 +975,73 @@
   };
   render();
 })();
+
+(() => {
+  const forecasts = el('extraHours')?.closest('.weekend');
+  if (!forecasts || el('regularShiftForecast')) return;
+
+  const shifts = [
+    {icon: '☀️', label: 'Дневная смена', hours: 8, nightHours: 0},
+    {icon: '☀️', label: 'Дневная смена', hours: 11.2, nightHours: 0},
+    {icon: '🌙', label: 'Ночная смена', hours: 11.5, nightHours: 7.5}
+  ];
+  const section = document.createElement('section');
+  section.id = 'regularShiftForecast';
+  section.setAttribute('aria-labelledby', 'regularShiftHeading');
+  section.style.marginTop = '16px';
+  section.innerHTML = `
+    <h3 id="regularShiftHeading" style="margin:0 0 4px">Стоимость обычной смены</h3>
+    <p class="small" style="margin:0">Ориентировочная оплата на руки</p>
+    <div>${shifts.map(({icon, label, hours, nightHours}) => `
+      <div class="row">
+        <span><span aria-hidden="true">${icon}</span> ${label} · ${qty(hours)} ч${nightHours
+          ? `<br><small class="small">Включая ${qty(nightHours)} ночных ч</small>`
+          : ''}</span>
+        <b class="accent"></b>
+      </div>`).join('')}
+    </div>
+    <p class="small" style="margin:6px 0 0">Ориентировочная сумма после НДФЛ, без учёта индивидуальных месячных удержаний</p>`;
+  forecasts.append(section);
+  const amounts = section.querySelectorAll('.row b');
+
+  function renderRegularShiftForecast(params) {
+    // Copy only shift-related rates. The exclusions cover both payroll engines.
+    const shiftParams = {
+      hourlyRate: params.hourlyRate,
+      btkPct: params.btkPct,
+      timePremiumPct: params.timePremiumPct,
+      shopPremiumPct: params.shopPremiumPct,
+      districtPct: params.districtPct,
+      nightPct: params.nightPct,
+      weekendHours: 0,
+      overtimeHours: 0,
+      overtimeExtraPct: 0,
+      overtimeStimPct: 0,
+      holidayBonus: 0,
+      vacationPayNet: 0,
+      advance: 0,
+      mealCount: 0,
+      mealEmployeePrice: 0,
+      mealFullPrice: 0,
+      mealSubsidyActual: 0,
+      mealDeductionActual: 0,
+      taxActualV35: 0,
+      taxActual: 0,
+      taxPct: 13
+    };
+
+    shifts.forEach(({hours, nightHours}, index) => {
+      const result = calculate(shiftParams, {baseHours: hours, nightHoursActual: nightHours});
+      amounts[index].textContent = money(result.totalInHand);
+    });
+  }
+
+  // Legacy input listeners call the original render, which passes the active
+  // month's parameters to renderLedger on every payroll recalculation.
+  const previousRenderLedger = renderLedger;
+  renderLedger = function(params, entries) {
+    previousRenderLedger(params, entries);
+    renderRegularShiftForecast(params);
+  };
+  renderRegularShiftForecast(app.months[currentMonth].params);
+})();
